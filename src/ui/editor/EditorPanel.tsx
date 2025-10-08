@@ -8,7 +8,7 @@ import type {
 } from '@excalidraw/excalidraw/types/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { JSONContent } from '@tiptap/core';
-import { type Editor, useEditor } from '@tiptap/react';
+import { type Editor, EditorContent, useEditor } from '@tiptap/react';
 import Highlight from '@tiptap/extension-highlight';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
@@ -19,6 +19,7 @@ import { fetchPage, updatePage } from '../../api/notes';
 import type { Page } from '../../api/types';
 import { queryKeys } from '../../lib/queryKeys';
 import { useSelectionStore } from '../../store/selection';
+import { Toolbar } from '../toolbar/Toolbar';
 
 function parseJsonContent(content?: string | null): JSONContent | undefined {
   if (!content) return undefined;
@@ -153,7 +154,11 @@ const defaultPageState: PageState = {
   contentHtml: '',
   contentText: '',
   contentJson: undefined,
-  canvasData: null
+  canvasData: {
+    elements: [],
+    appState: { viewBackgroundColor: 'rgb(2 6 23 / 1)' },
+    files: {}
+  }
 };
 
 const EMPTY_PAGE_QUERY_KEY = ['page', 'empty'] as const;
@@ -174,6 +179,8 @@ export function EditorPanel(): JSX.Element {
   const latestCanvasRef = useRef<CanvasData | null>(defaultPageState.canvasData);
   const initialCanvasDataRef = useRef<ExcalidrawInitialDataState | undefined>(undefined);
   const lastCanvasSnapshotRef = useRef<string>('');
+  const surfacePreferencesRef = useRef<Record<string, 'document' | 'canvas'>>({});
+  const [activeSurface, setActiveSurface] = useState<'document' | 'canvas'>('document');
   const enabled = Boolean(pageId);
   const pageQueryKey = pageId ? queryKeys.page(pageId) : EMPTY_PAGE_QUERY_KEY;
 
@@ -271,6 +278,11 @@ export function EditorPanel(): JSX.Element {
     initialCanvasDataRef.current = cloneCanvasForInitialData(canvas);
     lastCanvasSnapshotRef.current = snapshotCanvasData(canvas);
 
+    const preferredSurface =
+      surfacePreferencesRef.current[page.id] ?? (canvas?.elements?.length ? 'canvas' : 'document');
+    surfacePreferencesRef.current[page.id] = preferredSurface;
+    setActiveSurface(preferredSurface);
+
     if (editor) {
       if (json) {
         editor.commands.setContent(json, false);
@@ -285,6 +297,12 @@ export function EditorPanel(): JSX.Element {
   }, [pageState.title]);
 
   useEffect(() => {
+    if (!pageId) {
+      setActiveSurface('document');
+    }
+  }, [pageId]);
+
+  useEffect(() => {
     if (!enabled && editor) {
       editor.commands.clearContent();
       latestContentRef.current = {
@@ -292,9 +310,9 @@ export function EditorPanel(): JSX.Element {
         text: defaultPageState.contentText,
         json: defaultPageState.contentJson
       };
-    latestCanvasRef.current = defaultPageState.canvasData;
-    initialCanvasDataRef.current = cloneCanvasForInitialData(defaultPageState.canvasData);
-    lastCanvasSnapshotRef.current = snapshotCanvasData(defaultPageState.canvasData);
+      latestCanvasRef.current = defaultPageState.canvasData;
+      initialCanvasDataRef.current = cloneCanvasForInitialData(defaultPageState.canvasData);
+      lastCanvasSnapshotRef.current = snapshotCanvasData(defaultPageState.canvasData);
       setPageState(defaultPageState);
     }
   }, [enabled, editor]);
@@ -335,6 +353,21 @@ export function EditorPanel(): JSX.Element {
     });
   };
 
+  const handleSurfaceChange = (surface: 'document' | 'canvas') => {
+    if (pageId) {
+      surfacePreferencesRef.current[pageId] = surface;
+    }
+
+    if (surface === 'canvas') {
+      initialCanvasDataRef.current = cloneCanvasForInitialData(latestCanvasRef.current);
+    }
+
+    setActiveSurface(surface);
+    if (surface === 'document' && editor) {
+      editor.commands.focus();
+    }
+  };
+
   const handleCanvasChange = (elements: unknown, appState: unknown, files: unknown) => {
     if (!pageId) return;
     const resolvedElements = Array.isArray(elements)
@@ -351,7 +384,6 @@ export function EditorPanel(): JSX.Element {
     }
 
     lastCanvasSnapshotRef.current = snapshot;
-    initialCanvasDataRef.current = cloneCanvasForInitialData(canvasData);
     latestCanvasRef.current = canvasData;
     setPageState((prev) => ({ ...prev, canvasData }));
     scheduleSave();
@@ -406,9 +438,41 @@ export function EditorPanel(): JSX.Element {
             />
           </div>
           <div className="flex items-center gap-4">
+            <div className="flex rounded-md bg-slate-800 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => handleSurfaceChange('document')}
+                className={`rounded px-2 py-1 font-medium transition ${
+                  activeSurface === 'document'
+                    ? 'bg-slate-200 text-slate-900'
+                    : 'text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                Document
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSurfaceChange('canvas')}
+                className={`rounded px-2 py-1 font-medium transition ${
+                  activeSurface === 'canvas'
+                    ? 'bg-slate-200 text-slate-900'
+                    : 'text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                Canvas
+              </button>
+            </div>
             <div className="text-xs text-slate-500">{statusText}</div>
           </div>
         </div>
+        {activeSurface === 'document' ? (
+          <>
+            <Toolbar editor={editor} />
+            <div className="flex-1 overflow-auto px-6 pb-24 pt-6">
+              <EditorContent editor={editor} className="prose prose-invert max-w-none" />
+            </div>
+          </>
+        ) : (
           <div className="flex-1 min-h-0">
             <Excalidraw
               key={pageId}
@@ -425,6 +489,7 @@ export function EditorPanel(): JSX.Element {
               }}
             />
           </div>
+        )}
       </div>
     );
   }
