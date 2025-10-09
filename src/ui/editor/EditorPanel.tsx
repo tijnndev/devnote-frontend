@@ -359,9 +359,9 @@ export function EditorPanel(): JSX.Element {
 
     if (editor) {
       if (json) {
-        editor.commands.setContent(json, false);
+        editor.commands.setContent(json, { preserveHistory: true });
       } else {
-        editor.commands.setContent(html, false);
+        editor.commands.setContent(html, { preserveHistory: true });
       }
     }
   }, [pageQuery.data, editor, clearPendingSave]);
