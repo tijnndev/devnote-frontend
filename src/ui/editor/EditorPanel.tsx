@@ -601,7 +601,7 @@ export function EditorPanel(): JSX.Element {
         </div>
         {activeSurface === 'document' ? (
           <>
-            <Toolbar editor={editor} />
+            <Toolbar editor={editor} pageTitle={pageState.title} />
             <div className="flex-1 overflow-auto px-6 pb-24 pt-6">
               <EditorContent editor={editor} className="prose prose-invert max-w-none" />
             </div>
