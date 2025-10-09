@@ -216,7 +216,7 @@ export function Toolbar({ editor, onRecordRevision, pageTitle }: ToolbarProps) {
 
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-900/70 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 bg-slate-900/70 px-3 py-2 md:flex-nowrap">
         <div className="flex items-center gap-1">
           <Tooltip.Root delayDuration={200}><Tooltip.Trigger asChild>
             <button
@@ -247,8 +247,8 @@ export function Toolbar({ editor, onRecordRevision, pageTitle }: ToolbarProps) {
           </Tooltip.Content>
           </Tooltip.Root>
         </div>
-        <div className="h-6 w-px bg-slate-800" />
-        <div className="flex items-center gap-1">
+        <div className="hidden h-6 w-px bg-slate-800 sm:block" />
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {controls.map((control) => (
             <Tooltip.Root key={control.label} delayDuration={200}>
               <Tooltip.Trigger asChild>
@@ -270,13 +270,13 @@ export function Toolbar({ editor, onRecordRevision, pageTitle }: ToolbarProps) {
               </Tooltip.Content>
             </Tooltip.Root>
           ))}
-          <div className="ml-2 flex flex-col items-start justify-center">
+          <div className="ml-2 hidden flex-col items-start justify-center lg:flex">
             <span className="text-[10px] text-slate-500 select-none">
               Indent/outdent list: <kbd className="px-1">Ctrl+[</kbd> / <kbd className="px-1">Ctrl+]</kbd>
             </span>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 sm:ml-0 sm:gap-3 md:ml-auto">
           <div className="relative" ref={exportMenuRef}>
             <Tooltip.Root delayDuration={200}>
               <Tooltip.Trigger asChild>

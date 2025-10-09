@@ -589,21 +589,21 @@ export function EditorPanel(): JSX.Element {
   } else {
     body = (
       <div className="flex flex-1 flex-col">
-        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/80 px-6 py-4">
-          <div>
+        <div className="flex flex-col gap-4 border-b border-slate-800 bg-slate-900/80 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
+          <div className="w-full md:max-w-xl">
             {pageLocationLabel && (
               <p className="text-xs uppercase tracking-wide text-slate-500">{pageLocationLabel}</p>
             )}
             <input
-              className="mt-1 w-full bg-transparent text-2xl font-semibold text-slate-100 outline-none focus:ring-0"
+              className="mt-1 w-full bg-transparent text-xl font-semibold text-slate-100 outline-none focus:ring-0 sm:text-2xl"
               value={pageState.title}
               onChange={handleTitleChange}
               onBlur={handleTitleBlur}
               placeholder="Untitled page"
             />
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex rounded-md bg-slate-800 p-0.5 text-xs">
+          <div className="flex w-full flex-wrap items-center gap-3 md:w-auto md:justify-end md:gap-4">
+            <div className="flex rounded-md bg-slate-800 p-0.5 text-xs shadow">
               <button
                 type="button"
                 onClick={() => handleSurfaceChange('document')}
@@ -631,7 +631,7 @@ export function EditorPanel(): JSX.Element {
               type="button"
               onClick={handleToggleAutoSave}
               aria-pressed={autoSaveEnabled}
-              className={`flex items-center gap-2 rounded-full border px-2 py-1 text-xs font-medium transition ${
+              className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition ${
                 autoSaveEnabled
                   ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
                   : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
@@ -650,7 +650,7 @@ export function EditorPanel(): JSX.Element {
               </span>
               {autoSaveEnabled ? 'Auto-save on' : 'Auto-save off'}
             </button>
-            <div className="text-xs text-slate-500">{statusText}</div>
+            <div className="text-xs text-slate-500 md:text-right">{statusText}</div>
           </div>
         </div>
         {activeSurface === 'document' ? (

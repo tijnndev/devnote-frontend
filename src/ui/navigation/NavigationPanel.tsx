@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, FilePlus2, FolderPlus, Trash2 } from 'lucide-react';
+import clsx from 'clsx';
 
 import {
   createFolder,
@@ -239,7 +240,12 @@ function findFolderPath(tree: WorkspaceTree | undefined, targetId: string): stri
   return null;
 }
 
-export function NavigationPanel() {
+type NavigationPanelProps = {
+  className?: string;
+  onClose?: () => void;
+};
+
+export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   const queryClient = useQueryClient();
   const { folderId, pageId, setFolder, selectPage, clear } = useSelectionStore();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -371,11 +377,13 @@ export function NavigationPanel() {
 
   const handleSelectFolder = (id: string | null) => {
     setFolder(id);
+    onClose?.();
   };
 
   const handleSelectPage = (folderIdValue: string | null, page: Page) => {
     selectPage(folderIdValue, page.id);
     ensureFolderExpanded(folderIdValue);
+    onClose?.();
   };
 
   const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -386,6 +394,7 @@ export function NavigationPanel() {
     ensureFolderExpanded(result.folderId);
     selectPage(result.folderId, result.id);
     setSearchTerm('');
+    onClose?.();
   };
 
   let searchContent: ReactNode = null;
@@ -498,7 +507,12 @@ export function NavigationPanel() {
   }
 
   return (
-    <aside className="flex h-full w-80 flex-col border-r border-slate-900 bg-slate-950 text-slate-100">
+    <aside
+      className={clsx(
+        'flex h-full w-80 flex-col border-r border-slate-900 bg-slate-950 text-slate-100',
+        className
+      )}
+    >
       <PanelHeader
         onCreateRootFolder={() => handleCreateFolder(null)}
         onCreateRootPage={() => handleCreatePage(null)}
