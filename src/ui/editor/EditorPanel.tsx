@@ -429,13 +429,13 @@ export function EditorPanel(): JSX.Element {
       }
       // List indent (Ctrl+])
       if ((event.ctrlKey || event.metaKey) && event.key === ']') {
-        if (editor && editor.isActive('bulletList') || editor.isActive('orderedList')) {
+        if (editor && editor.isActive('bulletList') || editor && editor.isActive('orderedList')) {
           event.preventDefault();
           editor.chain().focus().sinkListItem('listItem').run();
         }
       }
       // List outdent (Ctrl+[)
-      if ((event.ctrlKey || event.metaKey) && event.key === '[') {
+      if (editor && (event.ctrlKey || event.metaKey) && event.key === '[') {
         if (editor && editor.isActive('bulletList') || editor.isActive('orderedList')) {
           event.preventDefault();
           editor.chain().focus().liftListItem('listItem').run();
