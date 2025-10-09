@@ -178,7 +178,19 @@ export function EditorPanel(): JSX.Element {
   const [pageState, setPageState] = useState<PageState>(defaultPageState);
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const stored = window.localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
+      if (stored === null) {
+        window.localStorage.setItem(AUTO_SAVE_STORAGE_KEY, 'true');
+        return true;
+      }
+      return stored === 'true';
+    } catch {
+      return true;
+    }
+  });
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestTitleRef = useRef<string>(defaultPageState.title);
@@ -192,9 +204,9 @@ export function EditorPanel(): JSX.Element {
   const lastCanvasSnapshotRef = useRef<string>('');
   const surfacePreferencesRef = useRef<Record<string, 'document' | 'canvas'>>({});
   const activePageIdRef = useRef<string | null>(null);
-  const autoSaveEnabledRef = useRef(true);
+  const autoSaveEnabledRef = useRef(autoSaveEnabled);
   const hasPendingChangesRef = useRef(false);
-  const hasInitialisedAutoSaveRef = useRef(false);
+  const skipAutoSaveEffectRef = useRef(true);
   const [activeSurface, setActiveSurface] = useState<'document' | 'canvas'>('document');
   const enabled = Boolean(pageId);
   const pageQueryKey = pageId ? queryKeys.page(pageId) : EMPTY_PAGE_QUERY_KEY;
@@ -281,6 +293,14 @@ export function EditorPanel(): JSX.Element {
         const text = instance.state.doc.textContent;
         const json = instance.getJSON();
 
+        // Only trigger autosave if content actually changed
+        const prev = latestContentRef.current;
+        const isSame =
+          prev.html === html &&
+          prev.text === text &&
+          JSON.stringify(prev.json) === JSON.stringify(json);
+        if (isSame) return;
+
         latestContentRef.current = { html, text, json };
         setPageState((prev) => ({
           ...prev,
@@ -296,30 +316,24 @@ export function EditorPanel(): JSX.Element {
     [pageId]
   );
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const storedPreference = window.localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
-    if (storedPreference === null) {
-      window.localStorage.setItem(AUTO_SAVE_STORAGE_KEY, 'true');
-      autoSaveEnabledRef.current = true;
-      setAutoSaveEnabled(true);
-    } else {
-      const parsed = storedPreference === 'true';
-      autoSaveEnabledRef.current = parsed;
-      setAutoSaveEnabled(parsed);
-    }
-    hasInitialisedAutoSaveRef.current = true;
-  }, []);
+  // initial auto-save state is read synchronously in the useState initializer above
 
   useEffect(() => {
-    if (!hasInitialisedAutoSaveRef.current) return;
+    if (skipAutoSaveEffectRef.current) {
+      skipAutoSaveEffectRef.current = false;
+      autoSaveEnabledRef.current = autoSaveEnabled;
+      return;
+    }
+
     autoSaveEnabledRef.current = autoSaveEnabled;
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(
-        AUTO_SAVE_STORAGE_KEY,
-        autoSaveEnabled ? 'true' : 'false'
-      );
+      try {
+        window.localStorage.setItem(AUTO_SAVE_STORAGE_KEY, autoSaveEnabled ? 'true' : 'false');
+      } catch {
+        // ignore
+      }
     }
+
     if (!autoSaveEnabled) {
       clearPendingSave();
     } else if (hasPendingChangesRef.current) {
@@ -351,9 +365,13 @@ export function EditorPanel(): JSX.Element {
     activePageIdRef.current = page.id;
     hasPendingChangesRef.current = false;
     setHasPendingChanges(false);
-
+    console.log(canvas?.elements.length)
     const preferredSurface =
-      surfacePreferencesRef.current[page.id] ?? (canvas?.elements?.length ? 'canvas' : 'document');
+      surfacePreferencesRef.current[page.id] ??
+      (
+      (text && text.length > 0) || (canvas?.elements && canvas.elements.length <= 0)
+        ? 'document'
+        : 'canvas');
     surfacePreferencesRef.current[page.id] = preferredSurface;
     setActiveSurface(preferredSurface);
 
@@ -481,6 +499,27 @@ export function EditorPanel(): JSX.Element {
     setActiveSurface(surface);
     if (surface === 'document' && editor) {
       editor.commands.focus();
+    }
+    // If switching to the document surface, make sure any pending canvas changes
+    // (including clearing the canvas) are persisted immediately so a reload
+    // doesn't restore the old canvas state from the server.
+    if (surface === 'document') {
+      // If the latest canvas appears empty, ensure we persist an empty canvas
+      // representation to the server. This avoids the server returning an
+      // older non-empty canvas on reload.
+      const latestCanvas = latestCanvasRef.current;
+      const isCanvasEmpty = !latestCanvas || (Array.isArray(latestCanvas.elements) && latestCanvas.elements.length === 0);
+      if (isCanvasEmpty) {
+        // normalize to the default empty canvas representation
+        latestCanvasRef.current = defaultPageState.canvasData;
+        lastCanvasSnapshotRef.current = snapshotCanvasData(defaultPageState.canvasData);
+        hasPendingChangesRef.current = true;
+        setHasPendingChanges(true);
+        persistPage({ force: true });
+      } else if (hasPendingChangesRef.current) {
+        // non-empty but changed: persist current changes
+        persistPage({ force: true });
+      }
     }
   };
 
