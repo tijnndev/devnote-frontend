@@ -2,11 +2,20 @@ import {
   type ChangeEvent,
   type ReactNode,
   useDeferredValue,
+  useEffect,
   useMemo,
   useState
 } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, FilePlus2, FolderPlus, Trash2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  FilePlus2,
+  FileText,
+  Folder,
+  FolderPlus,
+  Trash2
+} from 'lucide-react';
 import clsx from 'clsx';
 
 import {
@@ -240,6 +249,21 @@ function findFolderPath(tree: WorkspaceTree | undefined, targetId: string): stri
   return null;
 }
 
+function findFolderById(tree: WorkspaceTree | undefined, targetId: string | null): FolderNode | null {
+  if (!tree || !targetId) return null;
+
+  const stack: FolderNode[] = [...tree.folders];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node.id === targetId) {
+      return node;
+    }
+    stack.push(...node.children);
+  }
+
+  return null;
+}
+
 type NavigationPanelProps = {
   className?: string;
   onClose?: () => void;
@@ -250,6 +274,31 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   const { folderId, pageId, setFolder, selectPage, clear } = useSelectionStore();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const [drilldownPath, setDrilldownPath] = useState<string[]>([]);
+  const [isMobileView, setIsMobileView] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia('(max-width: 768px)');
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsMobileView(event.matches);
+    };
+
+    setIsMobileView(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => {
+        mediaQuery.removeEventListener('change', handleChange);
+      };
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => {
+      mediaQuery.removeListener(handleChange);
+    };
+  }, []);
 
   const deferredSearch = useDeferredValue(searchTerm);
   const normalizedSearch = useMemo(() => deferredSearch.trim(), [deferredSearch]);
@@ -314,6 +363,46 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     }
   });
 
+  useEffect(() => {
+    if (!isMobileView) {
+      if (drilldownPath.length > 0) {
+        setDrilldownPath([]);
+      }
+      return;
+    }
+
+    if (!tree) return;
+
+    if (!folderId) {
+      if (drilldownPath.length > 0) {
+        setDrilldownPath([]);
+      }
+      return;
+    }
+
+    const path = findFolderPath(tree, folderId) ?? [];
+    const isSamePath =
+      path.length === drilldownPath.length && path.every((id, index) => drilldownPath[index] === id);
+
+    if (!isSamePath) {
+      setDrilldownPath(path);
+    }
+  }, [drilldownPath, folderId, isMobileView, tree]);
+
+  const currentFolderId = drilldownPath.length ? drilldownPath[drilldownPath.length - 1] : null;
+
+  const currentFolder = useMemo(() => {
+    if (!tree || !currentFolderId) return null;
+    return findFolderById(tree, currentFolderId);
+  }, [currentFolderId, tree]);
+
+  const breadcrumbFolders = useMemo(() => {
+    if (!tree || drilldownPath.length === 0) return [];
+    return drilldownPath
+      .map((id) => findFolderById(tree, id))
+      .filter((folder): folder is FolderNode => Boolean(folder));
+  }, [drilldownPath, tree]);
+
   const prefetchPage = (id: string) => {
     void queryClient.prefetchQuery({
       queryKey: queryKeys.page(id),
@@ -375,9 +464,58 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     void deletePageMutation.mutate(id);
   };
 
+  const handleDrillIntoFolder = (folder: FolderNode) => {
+    ensureFolderExpanded(folder.id);
+    setFolder(folder.id);
+    setDrilldownPath((prev) => {
+      if (prev[prev.length - 1] === folder.id) {
+        return prev;
+      }
+      return [...prev, folder.id];
+    });
+  };
+
+  const handleNavigateBack = () => {
+    if (drilldownPath.length === 0) {
+      setFolder(null);
+      return;
+    }
+
+    const nextPath = drilldownPath.slice(0, -1);
+    setDrilldownPath(nextPath);
+    const parentId = nextPath[nextPath.length - 1] ?? null;
+    setFolder(parentId ?? null);
+  };
+
+  const handleResetToRoot = () => {
+    if (drilldownPath.length > 0) {
+      setDrilldownPath([]);
+    }
+    setFolder(null);
+  };
+
   const handleSelectFolder = (id: string | null) => {
     setFolder(id);
-    onClose?.();
+    ensureFolderExpanded(id ?? null);
+
+    if (isMobileView) {
+      if (!id) {
+        if (drilldownPath.length > 0) {
+          setDrilldownPath([]);
+        }
+        return;
+      }
+
+      if (tree) {
+        const path = findFolderPath(tree, id) ?? [];
+        const isSamePath =
+          path.length === drilldownPath.length &&
+          path.every((value, index) => drilldownPath[index] === value);
+        if (!isSamePath) {
+          setDrilldownPath(path);
+        }
+      }
+    }
   };
 
   const handleSelectPage = (folderIdValue: string | null, page: Page) => {
@@ -394,6 +532,14 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     ensureFolderExpanded(result.folderId);
     selectPage(result.folderId, result.id);
     setSearchTerm('');
+    if (isMobileView) {
+      if (result.folderId && tree) {
+        const path = findFolderPath(tree, result.folderId) ?? [];
+        setDrilldownPath(path);
+      } else {
+        setDrilldownPath([]);
+      }
+    }
     onClose?.();
   };
 
@@ -445,6 +591,157 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     content = (
       <div className="p-4 text-sm text-slate-400">
         No notes yet. Use the buttons above to add your first page or folder.
+      </div>
+    );
+  } else if (isMobileView) {
+    const isRootView = drilldownPath.length === 0;
+    const foldersToDisplay = sortFolders(currentFolder ? currentFolder.children : tree.folders);
+    const pagesToDisplay = sortPages(currentFolder ? currentFolder.pages : tree.pages);
+    const hasItems = foldersToDisplay.length > 0 || pagesToDisplay.length > 0;
+
+    content = (
+      <div className="flex h-full flex-col text-sm">
+        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/80 px-3 py-2 text-xs text-slate-400">
+          {isRootView ? (
+            <span className="text-xs font-medium text-slate-300">Workspace</span>
+          ) : (
+            <button
+              type="button"
+              onClick={handleNavigateBack}
+              className="rounded px-2 py-1 text-slate-300 transition hover:bg-slate-800 hover:text-slate-100"
+            >
+              Back
+            </button>
+          )}
+          <p className="flex-1 px-2 text-center text-sm font-semibold text-slate-100">
+            {currentFolder ? currentFolder.title : 'All notes'}
+          </p>
+          <button
+            type="button"
+            onClick={handleResetToRoot}
+            disabled={isRootView}
+            className={clsx(
+              'rounded px-2 py-1 transition',
+              isRootView
+                ? 'cursor-default text-slate-600'
+                : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
+            )}
+          >
+            Root
+          </button>
+        </div>
+        {breadcrumbFolders.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1 border-b border-slate-800 bg-slate-900/60 px-3 py-2 text-[0.7rem] text-slate-400">
+            <button
+              type="button"
+              onClick={handleResetToRoot}
+              className="rounded px-1 py-0.5 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+            >
+              Root
+            </button>
+            {breadcrumbFolders.map((folder, index) => (
+              <span key={folder.id} className="flex items-center gap-1 text-slate-500">
+                <span>/</span>
+                <button
+                  type="button"
+                  onClick={() => handleSelectFolder(folder.id)}
+                  className={clsx(
+                    'rounded px-1 py-0.5 transition',
+                    index === breadcrumbFolders.length - 1
+                      ? 'font-semibold text-slate-200'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                  )}
+                >
+                  {folder.title}
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {currentFolder ? (
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 bg-slate-900/60 px-3 py-2 text-[0.7rem] text-slate-300">
+            <span className="font-medium text-slate-200">Add to {currentFolder.title}</span>
+            <button
+              type="button"
+              onClick={() => handleCreatePage(currentFolder.id)}
+              className="rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
+            >
+              + Page
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCreateFolder(currentFolder.id)}
+              className="rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
+            >
+              + Folder
+            </button>
+          </div>
+        ) : null}
+        <div className="flex-1 space-y-4 overflow-y-auto px-3 py-3">
+          {hasItems ? (
+            <>
+              {foldersToDisplay.length > 0 ? (
+                <div>
+                  <p className="px-1 text-[0.65rem] uppercase tracking-wide text-slate-500">Folders</p>
+                  <ul className="mt-2 space-y-2">
+                    {foldersToDisplay.map((folder) => (
+                      <li key={folder.id}>
+                        <button
+                          type="button"
+                          onClick={() => handleDrillIntoFolder(folder)}
+                          className={clsx(
+                            'flex w-full items-center justify-between rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-left transition hover:border-slate-700 hover:bg-slate-800',
+                            folderId === folder.id
+                              ? 'border-slate-600 bg-slate-800/80 text-slate-100'
+                              : 'text-slate-200'
+                          )}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Folder className="h-4 w-4 text-slate-400" />
+                            <span className="truncate font-medium">{folder.title}</span>
+                          </span>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {pagesToDisplay.length > 0 ? (
+                <div>
+                  <p className="px-1 text-[0.65rem] uppercase tracking-wide text-slate-500">Pages</p>
+                  <ul className="mt-2 space-y-2">
+                    {pagesToDisplay.map((page) => {
+                      const scopedFolderId = currentFolder ? currentFolder.id : null;
+                      const isSelected = pageId === page.id && (folderId ?? null) === scopedFolderId;
+                      return (
+                        <li key={page.id}>
+                          <button
+                            type="button"
+                            className={clsx(
+                              'flex w-full items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-left transition hover:border-slate-700 hover:bg-slate-800',
+                              isSelected ? 'border-slate-600 bg-slate-800/80 text-slate-100' : 'text-slate-200'
+                            )}
+                            onClick={() => handleSelectPage(scopedFolderId, page)}
+                            onMouseEnter={() => prefetchPage(page.id)}
+                            onFocus={() => prefetchPage(page.id)}
+                          >
+                            <FileText className="h-4 w-4 text-slate-400" />
+                            <span className="truncate">{page.title}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="rounded-md border border-dashed border-slate-800 bg-slate-900/40 px-3 py-6 text-center text-sm text-slate-400">
+              This folder is empty.
+            </div>
+          )}
+        </div>
       </div>
     );
   } else {
