@@ -421,10 +421,25 @@ export function EditorPanel(): JSX.Element {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Save (Ctrl+S / Cmd+S)
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
         if (!activePageIdRef.current) return;
         persistPage({ force: true });
+      }
+      // List indent (Ctrl+])
+      if ((event.ctrlKey || event.metaKey) && event.key === ']') {
+        if (editor && editor.isActive('bulletList') || editor.isActive('orderedList')) {
+          event.preventDefault();
+          editor.chain().focus().sinkListItem('listItem').run();
+        }
+      }
+      // List outdent (Ctrl+[)
+      if ((event.ctrlKey || event.metaKey) && event.key === '[') {
+        if (editor && editor.isActive('bulletList') || editor.isActive('orderedList')) {
+          event.preventDefault();
+          editor.chain().focus().liftListItem('listItem').run();
+        }
       }
     };
 
@@ -432,7 +447,7 @@ export function EditorPanel(): JSX.Element {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [persistPage]);
+  }, [persistPage, editor]);
 
   const handleTitleChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (!activePageIdRef.current) return;

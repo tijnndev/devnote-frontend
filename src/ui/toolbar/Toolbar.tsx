@@ -210,6 +210,11 @@ export function Toolbar({ editor, onRecordRevision, pageTitle }: ToolbarProps) {
             {control.icon}
           </button>
         ))}
+        <div className="ml-2 flex flex-col items-start justify-center">
+          <span className="text-[10px] text-slate-500 select-none">
+            Indent/outdent list: <kbd className="px-1">Ctrl+[</kbd> / <kbd className="px-1">Ctrl+]</kbd>
+          </span>
+        </div>
       </div>
       <div className="ml-auto flex items-center gap-2">
         <div className="relative" ref={exportMenuRef}>
