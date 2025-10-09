@@ -20,3 +20,22 @@ body {
   margin-top: 0 !important;
   margin-bottom: 0 !important;
 }
+
+.prose .ProseMirror,
+.prose .tiptap,
+.ProseMirror,
+.tiptap {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  -webkit-box-shadow: none !important;
+}
+.prose :focus,
+.ProseMirror:focus,
+.ProseMirror:focus-visible,
+.tiptap:focus,
+.tiptap:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
