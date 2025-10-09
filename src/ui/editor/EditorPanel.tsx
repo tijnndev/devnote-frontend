@@ -1,4 +1,12 @@
-import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ChangeEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/types/element/types';
 import type {
@@ -162,6 +170,7 @@ const defaultPageState: PageState = {
 };
 
 const EMPTY_PAGE_QUERY_KEY = ['page', 'empty'] as const;
+const AUTO_SAVE_STORAGE_KEY = 'devnote:auto-save-enabled';
 
 export function EditorPanel(): JSX.Element {
   const queryClient = useQueryClient();
@@ -169,6 +178,8 @@ export function EditorPanel(): JSX.Element {
   const [pageState, setPageState] = useState<PageState>(defaultPageState);
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestTitleRef = useRef<string>(defaultPageState.title);
   const latestContentRef = useRef<{ html: string; text: string; json?: JSONContent }>({
@@ -180,6 +191,10 @@ export function EditorPanel(): JSX.Element {
   const initialCanvasDataRef = useRef<ExcalidrawInitialDataState | undefined>(undefined);
   const lastCanvasSnapshotRef = useRef<string>('');
   const surfacePreferencesRef = useRef<Record<string, 'document' | 'canvas'>>({});
+  const activePageIdRef = useRef<string | null>(null);
+  const autoSaveEnabledRef = useRef(true);
+  const hasPendingChangesRef = useRef(false);
+  const hasInitialisedAutoSaveRef = useRef(false);
   const [activeSurface, setActiveSurface] = useState<'document' | 'canvas'>('document');
   const enabled = Boolean(pageId);
   const pageQueryKey = pageId ? queryKeys.page(pageId) : EMPTY_PAGE_QUERY_KEY;
@@ -190,15 +205,42 @@ export function EditorPanel(): JSX.Element {
     enabled
   });
 
-  const scheduleSave = () => {
-    if (!pageId) return;
+  const updatePageMutation = useMutation<Page, Error, { id: string; input: Parameters<typeof updatePage>[1] }>(
+    {
+      mutationFn: ({ id, input }) => updatePage(id, input),
+      onMutate: () => {
+        setSaving(true);
+      },
+      onSuccess: (page) => {
+        queryClient.setQueryData(queryKeys.page(page.id), page);
+        void queryClient.invalidateQueries({ queryKey: queryKeys.workspace });
+        setSaving(false);
+        setLastSavedAt(new Date());
+        hasPendingChangesRef.current = false;
+        setHasPendingChanges(false);
+      },
+      onError: () => {
+        setSaving(false);
+      }
+    }
+  );
+
+  const clearPendingSave = useCallback(() => {
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
+      debounceTimer.current = null;
     }
+  }, []);
 
-    debounceTimer.current = setTimeout(() => {
+  const persistPage = useCallback(
+    (options?: { force?: boolean }) => {
+      const targetPageId = activePageIdRef.current;
+      if (!targetPageId) return;
+      if (!options?.force && !hasPendingChangesRef.current) return;
+
+      clearPendingSave();
       updatePageMutation.mutate({
-        id: pageId,
+        id: targetPageId,
         input: {
           title: latestTitleRef.current,
           content: {
@@ -209,24 +251,19 @@ export function EditorPanel(): JSX.Element {
           }
         }
       });
-    }, 600);
-  };
+    },
+    [clearPendingSave, updatePageMutation]
+  );
 
-  const updatePageMutation = useMutation<Page, Error, { id: string; input: Parameters<typeof updatePage>[1] }>({
-    mutationFn: ({ id, input }) => updatePage(id, input),
-    onMutate: () => {
-      setSaving(true);
-    },
-    onSuccess: (page) => {
-  queryClient.setQueryData(queryKeys.page(page.id), page);
-  void queryClient.invalidateQueries({ queryKey: queryKeys.workspace });
-      setSaving(false);
-      setLastSavedAt(new Date());
-    },
-    onError: () => {
-      setSaving(false);
-    }
-  });
+  const scheduleSave = useCallback(() => {
+    if (!autoSaveEnabledRef.current) return;
+    if (!activePageIdRef.current) return;
+
+    clearPendingSave();
+    debounceTimer.current = setTimeout(() => {
+      persistPage();
+    }, 600);
+  }, [clearPendingSave, persistPage]);
 
   const editor = useEditor(
     {
@@ -239,7 +276,7 @@ export function EditorPanel(): JSX.Element {
       content: '',
       editable: enabled,
       onUpdate({ editor: instance }: { editor: Editor }) {
-        if (!pageId) return;
+        if (!activePageIdRef.current) return;
         const html = instance.getHTML();
         const text = instance.state.doc.textContent;
         const json = instance.getJSON();
@@ -251,11 +288,44 @@ export function EditorPanel(): JSX.Element {
           contentText: text,
           contentJson: json
         }));
+        hasPendingChangesRef.current = true;
+        setHasPendingChanges(true);
         scheduleSave();
       }
     },
     [pageId]
   );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedPreference = window.localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
+    if (storedPreference === null) {
+      window.localStorage.setItem(AUTO_SAVE_STORAGE_KEY, 'true');
+      autoSaveEnabledRef.current = true;
+      setAutoSaveEnabled(true);
+    } else {
+      const parsed = storedPreference === 'true';
+      autoSaveEnabledRef.current = parsed;
+      setAutoSaveEnabled(parsed);
+    }
+    hasInitialisedAutoSaveRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hasInitialisedAutoSaveRef.current) return;
+    autoSaveEnabledRef.current = autoSaveEnabled;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(
+        AUTO_SAVE_STORAGE_KEY,
+        autoSaveEnabled ? 'true' : 'false'
+      );
+    }
+    if (!autoSaveEnabled) {
+      clearPendingSave();
+    } else if (hasPendingChangesRef.current) {
+      scheduleSave();
+    }
+  }, [autoSaveEnabled, clearPendingSave, scheduleSave]);
 
   useEffect(() => {
     if (!pageQuery.data) return;
@@ -277,6 +347,10 @@ export function EditorPanel(): JSX.Element {
     latestTitleRef.current = page.title;
     initialCanvasDataRef.current = cloneCanvasForInitialData(canvas);
     lastCanvasSnapshotRef.current = snapshotCanvasData(canvas);
+  clearPendingSave();
+    activePageIdRef.current = page.id;
+    hasPendingChangesRef.current = false;
+    setHasPendingChanges(false);
 
     const preferredSurface =
       surfacePreferencesRef.current[page.id] ?? (canvas?.elements?.length ? 'canvas' : 'document');
@@ -290,7 +364,7 @@ export function EditorPanel(): JSX.Element {
         editor.commands.setContent(html, false);
       }
     }
-  }, [pageQuery.data, editor]);
+  }, [pageQuery.data, editor, clearPendingSave]);
 
   useEffect(() => {
     latestTitleRef.current = pageState.title;
@@ -303,8 +377,21 @@ export function EditorPanel(): JSX.Element {
   }, [pageId]);
 
   useEffect(() => {
-    if (!enabled && editor) {
-      editor.commands.clearContent();
+    if (!pageId) {
+      activePageIdRef.current = null;
+      clearPendingSave();
+    } else if (activePageIdRef.current !== pageId) {
+      activePageIdRef.current = null;
+      clearPendingSave();
+    }
+  }, [pageId, clearPendingSave]);
+
+  useEffect(() => {
+    if (!enabled) {
+      clearPendingSave();
+      if (editor) {
+        editor.commands.clearContent();
+      }
       latestContentRef.current = {
         html: defaultPageState.contentHtml,
         text: defaultPageState.contentText,
@@ -314,8 +401,11 @@ export function EditorPanel(): JSX.Element {
       initialCanvasDataRef.current = cloneCanvasForInitialData(defaultPageState.canvasData);
       lastCanvasSnapshotRef.current = snapshotCanvasData(defaultPageState.canvasData);
       setPageState(defaultPageState);
+      activePageIdRef.current = null;
+      hasPendingChangesRef.current = false;
+      setHasPendingChanges(false);
     }
-  }, [enabled, editor]);
+  }, [enabled, editor, clearPendingSave]);
 
   useEffect(() => {
     if (editor) {
@@ -325,37 +415,48 @@ export function EditorPanel(): JSX.Element {
 
   useEffect(() => {
     return () => {
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current);
+      clearPendingSave();
+    };
+  }, [clearPendingSave]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        if (!activePageIdRef.current) return;
+        persistPage({ force: true });
       }
     };
-  }, []);
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [persistPage]);
 
   const handleTitleChange = (event: ChangeEvent<HTMLInputElement>) => {
-  const value = event.target.value;
-  latestTitleRef.current = value;
-  setPageState((prev) => ({ ...prev, title: value }));
+    if (!activePageIdRef.current) return;
+    const value = event.target.value;
+    latestTitleRef.current = value;
+    setPageState((prev) => ({ ...prev, title: value }));
+    hasPendingChangesRef.current = true;
+    setHasPendingChanges(true);
+    scheduleSave();
   };
 
   const handleTitleBlur = () => {
-    if (!pageId) return;
-    updatePageMutation.mutate({
-      id: pageId,
-      input: {
-        title: latestTitleRef.current,
-        content: {
-          html: latestContentRef.current.html,
-          text: latestContentRef.current.text,
-          json: latestContentRef.current.json,
-          canvas: latestCanvasRef.current
-        }
-      }
-    });
+    if (!autoSaveEnabledRef.current) return;
+    persistPage();
+  };
+
+  const handleToggleAutoSave = () => {
+    setAutoSaveEnabled((prev) => !prev);
   };
 
   const handleSurfaceChange = (surface: 'document' | 'canvas') => {
-    if (pageId) {
-      surfacePreferencesRef.current[pageId] = surface;
+    const currentPageId = activePageIdRef.current;
+    if (currentPageId) {
+      surfacePreferencesRef.current[currentPageId] = surface;
     }
 
     if (surface === 'canvas') {
@@ -369,7 +470,7 @@ export function EditorPanel(): JSX.Element {
   };
 
   const handleCanvasChange = (elements: unknown, appState: unknown, files: unknown) => {
-    if (!pageId) return;
+    if (!activePageIdRef.current) return;
     const resolvedElements = Array.isArray(elements)
       ? (elements.filter(isExcalidrawElement) as readonly ExcalidrawElement[])
       : [];
@@ -384,8 +485,11 @@ export function EditorPanel(): JSX.Element {
     }
 
     lastCanvasSnapshotRef.current = snapshot;
+    initialCanvasDataRef.current = cloneCanvasForInitialData(canvasData);
     latestCanvasRef.current = canvasData;
     setPageState((prev) => ({ ...prev, canvasData }));
+    hasPendingChangesRef.current = true;
+    setHasPendingChanges(true);
     scheduleSave();
   };
 
@@ -398,10 +502,17 @@ export function EditorPanel(): JSX.Element {
 
   const statusText = useMemo(() => {
     if (!enabled) return 'No page selected';
+    if (!autoSaveEnabled) {
+      if (saving) return 'Saving…';
+      if (hasPendingChanges) return 'Unsaved changes · Ctrl+S';
+      if(!lastSavedAt) return 'No changes yet';
+      return `Saved ${lastSavedAt.toLocaleTimeString()}`;
+    }
     if (saving) return 'Saving…';
+    if (hasPendingChanges) return 'Pending auto-save…';
     if (lastSavedAt) return `Saved ${lastSavedAt.toLocaleTimeString()}`;
     return 'All changes saved';
-  }, [enabled, saving, lastSavedAt]);
+  }, [autoSaveEnabled, enabled, hasPendingChanges, lastSavedAt, saving]);
 
   let body: ReactNode = null;
 
@@ -462,6 +573,29 @@ export function EditorPanel(): JSX.Element {
                 Canvas
               </button>
             </div>
+            <button
+              type="button"
+              onClick={handleToggleAutoSave}
+              aria-pressed={autoSaveEnabled}
+              className={`flex items-center gap-2 rounded-full border px-2 py-1 text-xs font-medium transition ${
+                autoSaveEnabled
+                  ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                  : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <span
+                className={`relative inline-flex h-4 w-8 items-center rounded-full ${
+                  autoSaveEnabled ? 'bg-emerald-500/70' : 'bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform transform ${
+                    autoSaveEnabled ? 'translate-x-4' : 'translate-x-1'
+                  }`}
+                />
+              </span>
+              {autoSaveEnabled ? 'Auto-save on' : 'Auto-save off'}
+            </button>
             <div className="text-xs text-slate-500">{statusText}</div>
           </div>
         </div>
