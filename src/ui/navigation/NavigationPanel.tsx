@@ -4,9 +4,9 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
-  useState
-} from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+  useState,
+} from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronRight,
@@ -14,9 +14,9 @@ import {
   FileText,
   Folder,
   FolderPlus,
-  Trash2
-} from 'lucide-react';
-import clsx from 'clsx';
+  Trash2,
+} from "lucide-react";
+import clsx from "clsx";
 
 import {
   createFolder,
@@ -25,11 +25,16 @@ import {
   deletePage,
   fetchPage,
   fetchWorkspaceTree,
-  searchPages
-} from '../../api/notes';
-import type { FolderNode, Page, SearchResult, WorkspaceTree } from '../../api/types';
-import { queryKeys } from '../../lib/queryKeys';
-import { useSelectionStore } from '../../store/selection';
+  searchPages,
+} from "../../api/notes";
+import type {
+  FolderNode,
+  Page,
+  SearchResult,
+  WorkspaceTree,
+} from "../../api/types";
+import { queryKeys } from "../../lib/queryKeys";
+import { useSelectionStore } from "../../store/selection";
 
 function sortPages(pages: Page[]) {
   return [...pages].sort((a, b) => {
@@ -72,21 +77,26 @@ function FolderTreeItem({
   onSelectPage,
   selectedFolderId,
   selectedPageId,
-  prefetchPage
+  prefetchPage,
 }: FolderTreeProps) {
   const isExpanded = expanded.has(folder.id);
   const isSelected = selectedFolderId === folder.id;
 
   const handleToggle = () => {
+    const wasExpanded = expanded.has(folder.id);
     toggle(folder.id);
-    onSelectFolder(folder.id);
+    
+    // Only select the folder when expanding, not when collapsing
+    if (!wasExpanded) {
+      onSelectFolder(folder.id);
+    }
   };
 
   return (
     <li key={folder.id} className="rounded">
       <div
         className={`flex items-center justify-between rounded px-2 py-1 text-slate-200 hover:bg-slate-800 ${
-          isSelected ? 'bg-slate-800 text-white' : ''
+          isSelected ? "bg-slate-800 text-white" : ""
         }`}
       >
         <button
@@ -94,7 +104,11 @@ function FolderTreeItem({
           onClick={handleToggle}
           className="flex flex-1 items-center gap-2 text-left"
         >
-          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          {isExpanded ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
           <span className="truncate font-medium">{folder.title}</span>
         </button>
         <div className="flex items-center gap-1 text-xs">
@@ -132,7 +146,7 @@ function FolderTreeItem({
                   <li key={page.id}>
                     <div
                       className={`flex items-center justify-between rounded px-2 py-1 hover:bg-slate-800 ${
-                        isPageSelected ? 'bg-slate-800 text-white' : ''
+                        isPageSelected ? "bg-slate-800 text-white" : ""
                       }`}
                     >
                       <button
@@ -191,11 +205,18 @@ type PanelHeaderProps = {
   onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void;
 };
 
-function PanelHeader({ onCreateRootFolder, onCreateRootPage, searchTerm, onSearchChange }: PanelHeaderProps) {
+function PanelHeader({
+  onCreateRootFolder,
+  onCreateRootPage,
+  searchTerm,
+  onSearchChange,
+}: PanelHeaderProps) {
   return (
     <div className="space-y-2 border-b border-slate-800 px-3 py-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Workspace</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+          Workspace
+        </h2>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -228,7 +249,10 @@ function PanelHeader({ onCreateRootFolder, onCreateRootPage, searchTerm, onSearc
   );
 }
 
-function findFolderPath(tree: WorkspaceTree | undefined, targetId: string): string[] | null {
+function findFolderPath(
+  tree: WorkspaceTree | undefined,
+  targetId: string
+): string[] | null {
   if (!tree) return null;
 
   const stack: Array<{ node: FolderNode; path: string[] }> = [];
@@ -249,7 +273,10 @@ function findFolderPath(tree: WorkspaceTree | undefined, targetId: string): stri
   return null;
 }
 
-function findFolderById(tree: WorkspaceTree | undefined, targetId: string | null): FolderNode | null {
+function findFolderById(
+  tree: WorkspaceTree | undefined,
+  targetId: string | null
+): FolderNode | null {
   if (!tree || !targetId) return null;
 
   const stack: FolderNode[] = [...tree.folders];
@@ -271,26 +298,27 @@ type NavigationPanelProps = {
 
 export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   const queryClient = useQueryClient();
-  const { folderId, pageId, setFolder, selectPage, clear } = useSelectionStore();
+  const { folderId, pageId, setFolder, selectPage, clear } =
+    useSelectionStore();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [drilldownPath, setDrilldownPath] = useState<string[]>([]);
   const [isMobileView, setIsMobileView] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
-    const mediaQuery = window.matchMedia('(max-width: 768px)');
+    const mediaQuery = window.matchMedia("(max-width: 768px)");
     const handleChange = (event: MediaQueryListEvent) => {
       setIsMobileView(event.matches);
     };
 
     setIsMobileView(mediaQuery.matches);
 
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', handleChange);
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange);
       return () => {
-        mediaQuery.removeEventListener('change', handleChange);
+        mediaQuery.removeEventListener("change", handleChange);
       };
     }
 
@@ -301,18 +329,25 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   }, []);
 
   const deferredSearch = useDeferredValue(searchTerm);
-  const normalizedSearch = useMemo(() => deferredSearch.trim(), [deferredSearch]);
+  const normalizedSearch = useMemo(
+    () => deferredSearch.trim(),
+    [deferredSearch]
+  );
   const searchEnabled = normalizedSearch.length >= 2;
 
-  const { data: tree, isLoading, isError } = useQuery({
+  const {
+    data: tree,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: queryKeys.workspace,
-    queryFn: fetchWorkspaceTree
+    queryFn: fetchWorkspaceTree,
   });
 
   const searchQuery = useQuery({
-    queryKey: queryKeys.search(normalizedSearch || '_'),
+    queryKey: queryKeys.search(normalizedSearch || "_"),
     queryFn: () => searchPages(normalizedSearch),
-    enabled: searchEnabled
+    enabled: searchEnabled,
   });
 
   const createFolderMutation = useMutation({
@@ -328,7 +363,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
         next.add(folder.id);
         return next;
       });
-    }
+    },
   });
 
   const createPageMutation = useMutation({
@@ -344,7 +379,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
         });
       }
       void queryClient.invalidateQueries({ queryKey: queryKeys.page(page.id) });
-    }
+    },
   });
 
   const deleteFolderMutation = useMutation({
@@ -352,7 +387,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.workspace });
       clear();
-    }
+    },
   });
 
   const deletePageMutation = useMutation({
@@ -360,7 +395,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.workspace });
       clear();
-    }
+    },
   });
 
   useEffect(() => {
@@ -382,14 +417,17 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
 
     const path = findFolderPath(tree, folderId) ?? [];
     const isSamePath =
-      path.length === drilldownPath.length && path.every((id, index) => drilldownPath[index] === id);
+      path.length === drilldownPath.length &&
+      path.every((id, index) => drilldownPath[index] === id);
 
     if (!isSamePath) {
       setDrilldownPath(path);
     }
   }, [drilldownPath, folderId, isMobileView, tree]);
 
-  const currentFolderId = drilldownPath.length ? drilldownPath[drilldownPath.length - 1] : null;
+  const currentFolderId = drilldownPath.length
+    ? drilldownPath[drilldownPath.length - 1]
+    : null;
 
   const currentFolder = useMemo(() => {
     if (!tree || !currentFolderId) return null;
@@ -407,7 +445,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     void queryClient.prefetchQuery({
       queryKey: queryKeys.page(id),
       queryFn: () => fetchPage(id),
-      staleTime: 60_000
+      staleTime: 60_000,
     });
   };
 
@@ -423,49 +461,58 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     });
   };
 
-  const toggleFolderExpanded = (targetFolderId: string | null | undefined) => {
-    if (!targetFolderId || !tree) return
-    const path = findFolderPath(tree, targetFolderId)
-    if (!path) return
-    setExpanded(prev => {
-      const next = new Set(prev)
+  const ensureFolderExpanded = (targetFolderId: string | null | undefined) => {
+    if (!targetFolderId || !tree) {
+      return;
+    }
+    const path = findFolderPath(tree, targetFolderId);
+    if (!path) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
       for (const id of path) {
-        if (next.has(id)) next.delete(id)
-        else next.add(id)
+        console.log(next.has(id))
+        if(next.has(id)) continue
+        next.add(id);
       }
-      return next
-    })
-  }
-
+      console.log(next)
+      return next;
+    });
+    console.log(expanded)
+  };
 
   const handleCreateFolder = (parentId?: string | null) => {
-    const title = window.prompt('Folder name', 'Untitled folder');
+    const title = window.prompt("Folder name", "Untitled folder");
     if (!title) return;
     void createFolderMutation.mutate({ title, parentId: parentId ?? null });
     if (parentId) {
-      toggleFolderExpanded(parentId);
+      ensureFolderExpanded(parentId);
     }
   };
 
   const handleCreatePage = (parentId?: string | null) => {
-    const title = window.prompt('Page title', 'Untitled page');
+    const title = window.prompt("Page title", "Untitled page");
     if (!title) return;
     void createPageMutation.mutate({ title, folderId: parentId ?? null });
-    toggleFolderExpanded(parentId ?? null);
+    ensureFolderExpanded(parentId ?? null);
   };
 
   const handleDeleteFolder = (id: string) => {
-    if (!window.confirm('Delete folder and all nested content? This cannot be undone.')) return;
+    if (
+      !window.confirm(
+        "Delete folder and all nested content? This cannot be undone."
+      )
+    )
+      return;
     void deleteFolderMutation.mutate(id);
   };
 
   const handleDeletePage = (id: string) => {
-    if (!window.confirm('Delete page? This cannot be undone.')) return;
+    if (!window.confirm("Delete page? This cannot be undone.")) return;
     void deletePageMutation.mutate(id);
   };
 
   const handleDrillIntoFolder = (folder: FolderNode) => {
-    toggleFolderExpanded(folder.id);
+    ensureFolderExpanded(folder.id);
     setFolder(folder.id);
     setDrilldownPath((prev) => {
       if (prev[prev.length - 1] === folder.id) {
@@ -496,7 +543,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
 
   const handleSelectFolder = (id: string | null) => {
     setFolder(id);
-    toggleFolderExpanded(id ?? null);
+    ensureFolderExpanded(id ?? null);
 
     if (isMobileView) {
       if (!id) {
@@ -520,7 +567,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
 
   const handleSelectPage = (folderIdValue: string | null, page: Page) => {
     selectPage(folderIdValue, page.id);
-    toggleFolderExpanded(folderIdValue);
+    ensureFolderExpanded(folderIdValue);
     onClose?.();
   };
 
@@ -529,9 +576,9 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   };
 
   const handleSearchSelect = (result: SearchResult) => {
-    toggleFolderExpanded(result.folderId);
+    ensureFolderExpanded(result.folderId);
     selectPage(result.folderId, result.id);
-    setSearchTerm('');
+    setSearchTerm("");
     if (isMobileView) {
       if (result.folderId && tree) {
         const path = findFolderPath(tree, result.folderId) ?? [];
@@ -547,14 +594,22 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
 
   if (searchEnabled) {
     if (searchQuery.isLoading) {
-      searchContent = <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>;
+      searchContent = (
+        <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
+      );
     } else if (searchQuery.isError) {
-      searchContent = <div className="px-3 py-2 text-xs text-red-300">Search failed. Try again.</div>;
+      searchContent = (
+        <div className="px-3 py-2 text-xs text-red-300">
+          Search failed. Try again.
+        </div>
+      );
     } else {
       const results = searchQuery.data ?? [];
       searchContent = results.length ? (
         <div className="border-b border-slate-800 px-2 py-2 text-xs text-slate-300">
-          <p className="px-1 pb-2 text-[0.65rem] uppercase tracking-wide text-slate-500">Search results</p>
+          <p className="px-1 pb-2 text-[0.65rem] uppercase tracking-wide text-slate-500">
+            Search results
+          </p>
           <ul className="max-h-48 space-y-1 overflow-y-auto pr-1">
             {results.map((result) => (
               <li key={result.id}>
@@ -565,18 +620,24 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
                   onMouseEnter={() => prefetchPage(result.id)}
                   className="w-full rounded-md px-2 py-2 text-left hover:bg-slate-800"
                 >
-                  <p className="truncate text-sm font-medium text-slate-100">{result.title}</p>
-                  <p className="truncate text-[0.65rem] text-slate-500">
-                    {result.folderTitle ?? 'Root'}
+                  <p className="truncate text-sm font-medium text-slate-100">
+                    {result.title}
                   </p>
-                  <p className="mt-1 line-clamp-2 text-[0.7rem] text-slate-400">{result.snippet}</p>
+                  <p className="truncate text-[0.65rem] text-slate-500">
+                    {result.folderTitle ?? "Root"}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[0.7rem] text-slate-400">
+                    {result.snippet}
+                  </p>
                 </button>
               </li>
             ))}
           </ul>
         </div>
       ) : (
-        <div className="px-3 py-2 text-xs text-slate-500">No notes matched “{normalizedSearch}”.</div>
+        <div className="px-3 py-2 text-xs text-slate-500">
+          No notes matched “{normalizedSearch}”.
+        </div>
       );
     }
   }
@@ -584,9 +645,13 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   let content: ReactNode = null;
 
   if (isLoading) {
-    content = <div className="p-4 text-sm text-slate-400">Loading workspace…</div>;
+    content = (
+      <div className="p-4 text-sm text-slate-400">Loading workspace…</div>
+    );
   } else if (isError || !tree) {
-    content = <div className="p-4 text-sm text-red-300">Failed to load workspace.</div>;
+    content = (
+      <div className="p-4 text-sm text-red-300">Failed to load workspace.</div>
+    );
   } else if (tree.folders.length === 0 && tree.pages.length === 0) {
     content = (
       <div className="p-4 text-sm text-slate-400">
@@ -595,15 +660,21 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     );
   } else if (isMobileView) {
     const isRootView = drilldownPath.length === 0;
-    const foldersToDisplay = sortFolders(currentFolder ? currentFolder.children : tree.folders);
-    const pagesToDisplay = sortPages(currentFolder ? currentFolder.pages : tree.pages);
+    const foldersToDisplay = sortFolders(
+      currentFolder ? currentFolder.children : tree.folders
+    );
+    const pagesToDisplay = sortPages(
+      currentFolder ? currentFolder.pages : tree.pages
+    );
     const hasItems = foldersToDisplay.length > 0 || pagesToDisplay.length > 0;
 
     content = (
       <div className="flex h-full flex-col text-sm">
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/80 px-3 py-2 text-xs text-slate-400">
           {isRootView ? (
-            <span className="text-xs font-medium text-slate-300">Workspace</span>
+            <span className="text-xs font-medium text-slate-300">
+              Workspace
+            </span>
           ) : (
             <button
               type="button"
@@ -614,17 +685,17 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
             </button>
           )}
           <p className="flex-1 px-2 text-center text-sm font-semibold text-slate-100">
-            {currentFolder ? currentFolder.title : 'All notes'}
+            {currentFolder ? currentFolder.title : "All notes"}
           </p>
           <button
             type="button"
             onClick={handleResetToRoot}
             disabled={isRootView}
             className={clsx(
-              'rounded px-2 py-1 transition',
+              "rounded px-2 py-1 transition",
               isRootView
-                ? 'cursor-default text-slate-600'
-                : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
+                ? "cursor-default text-slate-600"
+                : "text-slate-300 hover:bg-slate-800 hover:text-slate-100"
             )}
           >
             Root
@@ -640,16 +711,19 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
               Root
             </button>
             {breadcrumbFolders.map((folder, index) => (
-              <span key={folder.id} className="flex items-center gap-1 text-slate-500">
+              <span
+                key={folder.id}
+                className="flex items-center gap-1 text-slate-500"
+              >
                 <span>/</span>
                 <button
                   type="button"
                   onClick={() => handleSelectFolder(folder.id)}
                   className={clsx(
-                    'rounded px-1 py-0.5 transition',
+                    "rounded px-1 py-0.5 transition",
                     index === breadcrumbFolders.length - 1
-                      ? 'font-semibold text-slate-200'
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                      ? "font-semibold text-slate-200"
+                      : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                   )}
                 >
                   {folder.title}
@@ -660,7 +734,9 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
         ) : null}
         {currentFolder ? (
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 bg-slate-900/60 px-3 py-2 text-[0.7rem] text-slate-300">
-            <span className="font-medium text-slate-200">Add to {currentFolder.title}</span>
+            <span className="font-medium text-slate-200">
+              Add to {currentFolder.title}
+            </span>
             <button
               type="button"
               onClick={() => handleCreatePage(currentFolder.id)}
@@ -682,7 +758,9 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
             <>
               {foldersToDisplay.length > 0 ? (
                 <div>
-                  <p className="px-1 text-[0.65rem] uppercase tracking-wide text-slate-500">Folders</p>
+                  <p className="px-1 text-[0.65rem] uppercase tracking-wide text-slate-500">
+                    Folders
+                  </p>
                   <ul className="mt-2 space-y-2">
                     {foldersToDisplay.map((folder) => (
                       <li key={folder.id}>
@@ -690,15 +768,17 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
                           type="button"
                           onClick={() => handleDrillIntoFolder(folder)}
                           className={clsx(
-                            'flex w-full items-center justify-between rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-left transition hover:border-slate-700 hover:bg-slate-800',
+                            "flex w-full items-center justify-between rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-left transition hover:border-slate-700 hover:bg-slate-800",
                             folderId === folder.id
-                              ? 'border-slate-600 bg-slate-800/80 text-slate-100'
-                              : 'text-slate-200'
+                              ? "border-slate-600 bg-slate-800/80 text-slate-100"
+                              : "text-slate-200"
                           )}
                         >
                           <span className="flex items-center gap-2">
                             <Folder className="h-4 w-4 text-slate-400" />
-                            <span className="truncate font-medium">{folder.title}</span>
+                            <span className="truncate font-medium">
+                              {folder.title}
+                            </span>
                           </span>
                           <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
                         </button>
@@ -709,20 +789,30 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
               ) : null}
               {pagesToDisplay.length > 0 ? (
                 <div>
-                  <p className="px-1 text-[0.65rem] uppercase tracking-wide text-slate-500">Pages</p>
+                  <p className="px-1 text-[0.65rem] uppercase tracking-wide text-slate-500">
+                    Pages
+                  </p>
                   <ul className="mt-2 space-y-2">
                     {pagesToDisplay.map((page) => {
-                      const scopedFolderId = currentFolder ? currentFolder.id : null;
-                      const isSelected = pageId === page.id && (folderId ?? null) === scopedFolderId;
+                      const scopedFolderId = currentFolder
+                        ? currentFolder.id
+                        : null;
+                      const isSelected =
+                        pageId === page.id &&
+                        (folderId ?? null) === scopedFolderId;
                       return (
                         <li key={page.id}>
                           <button
                             type="button"
                             className={clsx(
-                              'flex w-full items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-left transition hover:border-slate-700 hover:bg-slate-800',
-                              isSelected ? 'border-slate-600 bg-slate-800/80 text-slate-100' : 'text-slate-200'
+                              "flex w-full items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-left transition hover:border-slate-700 hover:bg-slate-800",
+                              isSelected
+                                ? "border-slate-600 bg-slate-800/80 text-slate-100"
+                                : "text-slate-200"
                             )}
-                            onClick={() => handleSelectPage(scopedFolderId, page)}
+                            onClick={() =>
+                              handleSelectPage(scopedFolderId, page)
+                            }
                             onMouseEnter={() => prefetchPage(page.id)}
                             onFocus={() => prefetchPage(page.id)}
                           >
@@ -750,12 +840,13 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
         {tree.pages.length > 0 ? (
           <ul className="mb-2 space-y-1">
             {sortPages(tree.pages).map((page) => {
-              const isSelected = pageId === page.id && (folderId ?? null) === null;
+              const isSelected =
+                pageId === page.id && (folderId ?? null) === null;
               return (
                 <li key={page.id}>
                   <div
                     className={`flex items-center justify-between rounded px-2 py-1 hover:bg-slate-800 ${
-                      isSelected ? 'bg-slate-800 text-white' : 'text-slate-200'
+                      isSelected ? "bg-slate-800 text-white" : "text-slate-200"
                     }`}
                   >
                     <button
@@ -806,7 +897,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   return (
     <aside
       className={clsx(
-        'flex h-full w-80 flex-col border-r border-slate-900 bg-slate-950 text-slate-100',
+        "flex h-full w-80 flex-col border-r border-slate-900 bg-slate-950 text-slate-100",
         className
       )}
     >
