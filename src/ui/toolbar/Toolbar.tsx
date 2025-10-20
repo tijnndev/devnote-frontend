@@ -20,42 +20,147 @@ const SHORTCUTS = [
   { label: 'Export', keys: '' },
 ];
 
-// All logic and the Toolbar function body should follow here, not above.
-
-export function Toolbar({ editor, onRecordRevision, pageTitle }: ToolbarProps) {
-  // ...existing hooks and logic...
-
-  // controls array and all editor logic should only be inside the Toolbar function body, not at the top level.
-
-  // ...rest of Toolbar function...
-}
 import { jsPDF } from 'jspdf';
 import type { Editor } from '@tiptap/react';
 import '@tiptap/extension-highlight';
+import {
   Bold,
   Italic,
-  Strikethrough,
   Heading2,
-  ListTree,
   ListOrdered,
-  ];
-  import { jsPDF } from 'jspdf';
-  import type { Editor } from '@tiptap/react';
-  import '@tiptap/extension-highlight';
-  import {
-    Bold,
-    Italic,
-    Strikethrough,
-    Heading2,
-    ListTree,
-    ListOrdered,
-    Quote,
-    Highlighter,
-    Undo2,
-    Redo2,
-    FileDown,
-    Loader2
-  } from 'lucide-react';
+  Loader2,
+  Quote,
+  Redo2,
+  Strikethrough,
+  Undo2,
+  ListTree,
+  Highlighter,
+  FileDown
+} from 'lucide-react';
+
+const toolbarButton =
+  'flex h-9 w-9 items-center justify-center rounded-md text-slate-200 hover:bg-slate-800 aria-pressed:bg-slate-700';
+
+type ToolbarProps = {
+  editor: Editor | null;
+  pageTitle?: string;
+  onRecordRevision?: () => void;
+};
+
+
+export function Toolbar({ editor, onRecordRevision, pageTitle }: ToolbarProps) {
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'txt' | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+
+    const handleClick = (event: MouseEvent) => {
+      if (!exportMenuRef.current) return;
+      if (!exportMenuRef.current.contains(event.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setExportMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [exportMenuOpen]);
+
+  const getFileBaseName = () => {
+    const fallback = pageTitle?.trim() || 'Untitled note';
+    const normalised = fallback
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gi, '-')
+      .replace(/^-+|-+$/g, '');
+    return normalised || 'note';
+  };
+
+  const downloadBlob = (data: BlobPart, type: string, filename: string) => {
+    const blob = new Blob([data], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = (format: 'pdf' | 'txt') => {
+    if (!editor) return;
+    setExportMenuOpen(false);
+    setExportingFormat(format);
+
+    const titleLine = pageTitle?.trim() || 'Untitled note';
+    const baseName = getFileBaseName();
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `${baseName}-${timestamp}.${format}`;
+
+    try {
+      if (format === 'txt') {
+        const textContent = editor.getText();
+        const exportText = `${textContent}`.trimEnd() || `${titleLine}\n`;
+        downloadBlob(exportText, 'text/plain;charset=utf-8', filename);
+        return;
+      }
+
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 48;
+      const maxLineWidth = pageWidth - margin * 2;
+      const textContent = editor.getText().trim() || '(No content)';
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text(titleLine, margin, margin);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(12);
+      const lines = doc.splitTextToSize(textContent, maxLineWidth);
+      doc.text(lines, margin, margin + 28);
+
+      doc.save(filename);
+    } catch (error) {
+      console.error('Failed to export note', error);
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
+  if (!editor) {
+    return null;
+  }
+
+  const controls = [
+    {
+      label: 'Bold',
+      icon: <Bold className="h-4 w-4" />,
+      action: () => editor.chain().focus().toggleBold().run(),
       active: editor.isActive('bold'),
       shortcut: 'Ctrl+B',
     },
