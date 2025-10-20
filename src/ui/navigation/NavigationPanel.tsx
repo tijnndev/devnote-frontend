@@ -423,27 +423,27 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     });
   };
 
-  const ensureFolderExpanded = (targetFolderId: string | null | undefined) => {
-    if (!targetFolderId || !tree) {
-      return;
-    }
-    const path = findFolderPath(tree, targetFolderId);
-    if (!path) return;
-    setExpanded((prev) => {
-      const next = new Set(prev);
+  const toggleFolderExpanded = (targetFolderId: string | null | undefined) => {
+    if (!targetFolderId || !tree) return
+    const path = findFolderPath(tree, targetFolderId)
+    if (!path) return
+    setExpanded(prev => {
+      const next = new Set(prev)
       for (const id of path) {
-        next.add(id);
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
       }
-      return next;
-    });
-  };
+      return next
+    })
+  }
+
 
   const handleCreateFolder = (parentId?: string | null) => {
     const title = window.prompt('Folder name', 'Untitled folder');
     if (!title) return;
     void createFolderMutation.mutate({ title, parentId: parentId ?? null });
     if (parentId) {
-      ensureFolderExpanded(parentId);
+      toggleFolderExpanded(parentId);
     }
   };
 
@@ -451,7 +451,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     const title = window.prompt('Page title', 'Untitled page');
     if (!title) return;
     void createPageMutation.mutate({ title, folderId: parentId ?? null });
-    ensureFolderExpanded(parentId ?? null);
+    toggleFolderExpanded(parentId ?? null);
   };
 
   const handleDeleteFolder = (id: string) => {
@@ -465,7 +465,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   };
 
   const handleDrillIntoFolder = (folder: FolderNode) => {
-    ensureFolderExpanded(folder.id);
+    toggleFolderExpanded(folder.id);
     setFolder(folder.id);
     setDrilldownPath((prev) => {
       if (prev[prev.length - 1] === folder.id) {
@@ -496,7 +496,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
 
   const handleSelectFolder = (id: string | null) => {
     setFolder(id);
-    ensureFolderExpanded(id ?? null);
+    toggleFolderExpanded(id ?? null);
 
     if (isMobileView) {
       if (!id) {
@@ -520,7 +520,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
 
   const handleSelectPage = (folderIdValue: string | null, page: Page) => {
     selectPage(folderIdValue, page.id);
-    ensureFolderExpanded(folderIdValue);
+    toggleFolderExpanded(folderIdValue);
     onClose?.();
   };
 
@@ -529,7 +529,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   };
 
   const handleSearchSelect = (result: SearchResult) => {
-    ensureFolderExpanded(result.folderId);
+    toggleFolderExpanded(result.folderId);
     selectPage(result.folderId, result.id);
     setSearchTerm('');
     if (isMobileView) {
