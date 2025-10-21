@@ -365,7 +365,6 @@ export function EditorPanel(): JSX.Element {
     activePageIdRef.current = page.id;
     hasPendingChangesRef.current = false;
     setHasPendingChanges(false);
-    console.log(canvas?.elements.length)
     const preferredSurface =
       surfacePreferencesRef.current[page.id] ??
       (

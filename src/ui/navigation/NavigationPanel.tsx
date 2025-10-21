@@ -470,14 +470,11 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
     setExpanded((prev) => {
       const next = new Set(prev);
       for (const id of path) {
-        console.log(next.has(id))
         if(next.has(id)) continue
         next.add(id);
       }
-      console.log(next)
       return next;
     });
-    console.log(expanded)
   };
 
   const handleCreateFolder = (parentId?: string | null) => {
