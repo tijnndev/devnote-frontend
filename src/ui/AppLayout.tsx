@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
@@ -12,6 +12,8 @@ export function AppLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(320); // Default width in pixels
+  const isResizingRef = useRef(false);
 
   const openMobileNav = () => {
     setMobileNavOpen(true);
@@ -25,6 +27,24 @@ export function AppLayout() {
     clearApiKey();
     queryClient.clear();
     navigate('/login', { replace: true });
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isResizingRef.current = true;
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isResizingRef.current) return;
+    const newWidth = Math.max(300, Math.min(600, e.clientX)); // Min 200px, max 600px
+    setSidebarWidth(newWidth);
+  };
+
+  const handleMouseUp = () => {
+    isResizingRef.current = false;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
   };
 
   return (
@@ -51,7 +71,12 @@ export function AppLayout() {
         </button>
       </header>
       <div className="relative flex flex-1 overflow-hidden">
-        <NavigationPanel className="hidden md:flex" />
+        <NavigationPanel className="hidden md:flex" width={sidebarWidth} />
+        <div
+          className="hidden md:block absolute top-0 bottom-0 w-1 bg-slate-800 cursor-col-resize hover:bg-slate-600 transition-colors z-10"
+          style={{ left: `${sidebarWidth}px` }}
+          onMouseDown={handleMouseDown}
+        />
         <EditorPanel />
         {mobileNavOpen ? (
           <div className="fixed inset-0 z-50 flex md:hidden">

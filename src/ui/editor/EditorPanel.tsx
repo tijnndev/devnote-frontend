@@ -29,6 +29,11 @@ import { queryKeys } from '../../lib/queryKeys';
 import { useSelectionStore } from '../../store/selection';
 import { Toolbar } from '../toolbar/Toolbar';
 
+function truncateText(text: string, maxLength: number = 20): string {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength - 3) + '...';
+}
+
 function parseJsonContent(content?: string | null): JSONContent | undefined {
   if (!content) return undefined;
   try {
@@ -549,7 +554,7 @@ export function EditorPanel(): JSX.Element {
   const pageLocationLabel = useMemo(() => {
     if (!pageQuery.data) return undefined;
     const folder = pageQuery.data.folder;
-    if (folder) return folder.title;
+    if (folder) return truncateText(folder.title, 30);
     return 'Root workspace';
   }, [pageQuery.data]);
 

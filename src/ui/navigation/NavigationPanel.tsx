@@ -50,6 +50,44 @@ function sortFolders(folders: FolderNode[]) {
   });
 }
 
+function truncateText(text: string, maxLength: number = 20): string {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength - 3) + '...';
+}
+
+function calculateMaxCharsForWidth(width: number, hasButtons: boolean = true, parentDepth: number = 0): number {
+  // Account for padding and spacing
+  const padding = 16; // px-2 = 8px * 2
+  const iconWidth = 16; // h-4 w-4 icon
+  const gap = 8; // gap-2
+  
+  // Indentation per level: ml-3 (12px) + pl-2 (8px) = 20px
+  // Each level of nesting adds margin-left and padding-left, which reduces available text space
+  const indentationPerLevel = 20;
+  const totalIndentation = parentDepth * indentationPerLevel;
+  
+  // Button space: "+ Folder" + "+ Page" + Delete icon + gaps
+  // More reasonable estimate: ~150px total
+  const buttonsWidth = hasButtons ? 168 : 0;
+  
+  // Available width for tex
+  // The indentation (ml-3 + pl-2) is applied to the container, reducing available space
+  const availableWidth = width - padding - iconWidth - gap - buttonsWidth - totalIndentation;
+  
+  // If width is too small, be very aggressive with truncation
+  if (availableWidth <= 16) {
+    return 1; // Show minimal characters
+  }
+  
+  // Estimate character width (average 8px per character for most fonts)
+  const charWidth = 8;
+  
+  // Calculate max characters with more conservative approach
+  const maxChars = Math.floor(availableWidth / charWidth);
+  
+  return Math.max(1, maxChars);
+}
+
 type FolderTreeProps = {
   folder: FolderNode;
   expanded: Set<string>;
@@ -63,6 +101,8 @@ type FolderTreeProps = {
   selectedFolderId?: string | null;
   selectedPageId?: string;
   prefetchPage: (pageId: string) => void;
+  sidebarWidth: number;
+  depth?: number;
 };
 
 function FolderTreeItem({
@@ -78,9 +118,15 @@ function FolderTreeItem({
   selectedFolderId,
   selectedPageId,
   prefetchPage,
+  sidebarWidth,
+  depth = 0,
 }: FolderTreeProps) {
   const isExpanded = expanded.has(folder.id);
   const isSelected = selectedFolderId === folder.id;
+
+  // This folder's title is at the current depth level (already inside parent's wrapper)
+  // So we calculate based on the current depth for this folder's own title
+  const maxChars = calculateMaxCharsForWidth(sidebarWidth, true, depth);
 
   const handleToggle = () => {
     const wasExpanded = expanded.has(folder.id);
@@ -109,7 +155,7 @@ function FolderTreeItem({
           ) : (
             <ChevronRight className="h-4 w-4" />
           )}
-          <span className="truncate font-medium">{folder.title}</span>
+          <span className="truncate font-medium">{truncateText(folder.title, maxChars)}</span>
         </button>
         <div className="flex items-center gap-1 text-xs">
           <button
@@ -188,6 +234,8 @@ function FolderTreeItem({
                   selectedFolderId={selectedFolderId}
                   selectedPageId={selectedPageId}
                   prefetchPage={prefetchPage}
+                  sidebarWidth={sidebarWidth}
+                  depth={depth + 1}
                 />
               ))}
             </ul>
@@ -294,9 +342,10 @@ function findFolderById(
 type NavigationPanelProps = {
   className?: string;
   onClose?: () => void;
+  width?: number;
 };
 
-export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
+export function NavigationPanel({ className, onClose, width = 320 }: NavigationPanelProps) {
   const queryClient = useQueryClient();
   const { folderId, pageId, setFolder, selectPage, clear } =
     useSelectionStore();
@@ -682,7 +731,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
             </button>
           )}
           <p className="flex-1 px-2 text-center text-sm font-semibold text-slate-100">
-            {currentFolder ? currentFolder.title : "All notes"}
+            {currentFolder ? truncateText(currentFolder.title, calculateMaxCharsForWidth(width, false, 0)) : "All notes"}
           </p>
           <button
             type="button"
@@ -723,7 +772,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
                       : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                   )}
                 >
-                  {folder.title}
+                  {truncateText(folder.title, Math.max(3, Math.floor(calculateMaxCharsForWidth(width, false, 0) * 0.3)))}
                 </button>
               </span>
             ))}
@@ -732,7 +781,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
         {currentFolder ? (
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 bg-slate-900/60 px-3 py-2 text-[0.7rem] text-slate-300">
             <span className="font-medium text-slate-200">
-              Add to {currentFolder.title}
+              Add to {truncateText(currentFolder.title, calculateMaxCharsForWidth(width, false, 0))}
             </span>
             <button
               type="button"
@@ -774,7 +823,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
                           <span className="flex items-center gap-2">
                             <Folder className="h-4 w-4 text-slate-400" />
                             <span className="truncate font-medium">
-                              {folder.title}
+                              {truncateText(folder.title, calculateMaxCharsForWidth(width, false, 0))}
                             </span>
                           </span>
                           <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
@@ -884,6 +933,7 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
               selectedFolderId={folderId}
               selectedPageId={pageId}
               prefetchPage={prefetchPage}
+              sidebarWidth={width}
             />
           ))}
         </ul>
@@ -894,9 +944,10 @@ export function NavigationPanel({ className, onClose }: NavigationPanelProps) {
   return (
     <aside
       className={clsx(
-        "flex h-full w-80 flex-col border-r border-slate-900 bg-slate-950 text-slate-100",
+        "flex h-full flex-col border-r border-slate-900 bg-slate-950 text-slate-100",
         className
       )}
+      style={{ width: `${width}px` }}
     >
       <PanelHeader
         onCreateRootFolder={() => handleCreateFolder(null)}
