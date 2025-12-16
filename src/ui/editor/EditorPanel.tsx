@@ -216,20 +216,10 @@ export function EditorPanel(): JSX.Element {
   const enabled = Boolean(pageId);
   const pageQueryKey = pageId ? queryKeys.page(pageId) : EMPTY_PAGE_QUERY_KEY;
 
-  console.log('[EditorPanel] Render - pageId:', pageId);
-  console.log('[EditorPanel] Render - enabled:', enabled);
-
   const pageQuery = useQuery<Page>({
     queryKey: pageQueryKey,
     queryFn: () => fetchPage(pageId!),
     enabled
-  });
-  
-  console.log('[EditorPanel] Query state:', {
-    isLoading: pageQuery.isLoading,
-    isError: pageQuery.isError,
-    data: pageQuery.data,
-    hasData: !!pageQuery.data
   });
 
   const updatePageMutation = useMutation<Page, Error, { id: string; input: Parameters<typeof updatePage>[1] }>(
