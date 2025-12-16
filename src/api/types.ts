@@ -18,7 +18,7 @@ export type Page = {
   isPinned: boolean;
   isArchived: boolean;
   folderId: string | null;
-  content?: PageContent | null;
+  content?: PageContent[] | null;
   createdAt: string;
   updatedAt: string;
   folder?: {

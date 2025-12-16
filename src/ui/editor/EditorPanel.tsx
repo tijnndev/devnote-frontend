@@ -216,10 +216,20 @@ export function EditorPanel(): JSX.Element {
   const enabled = Boolean(pageId);
   const pageQueryKey = pageId ? queryKeys.page(pageId) : EMPTY_PAGE_QUERY_KEY;
 
+  console.log('[EditorPanel] Render - pageId:', pageId);
+  console.log('[EditorPanel] Render - enabled:', enabled);
+
   const pageQuery = useQuery<Page>({
     queryKey: pageQueryKey,
     queryFn: () => fetchPage(pageId!),
     enabled
+  });
+  
+  console.log('[EditorPanel] Query state:', {
+    isLoading: pageQuery.isLoading,
+    isError: pageQuery.isError,
+    data: pageQuery.data,
+    hasData: !!pageQuery.data
   });
 
   const updatePageMutation = useMutation<Page, Error, { id: string; input: Parameters<typeof updatePage>[1] }>(
@@ -349,10 +359,21 @@ export function EditorPanel(): JSX.Element {
   useEffect(() => {
     if (!pageQuery.data) return;
     const page = pageQuery.data;
-    const html = page.content?.html ?? '<p></p>';
-    const text = page.content?.text ?? page.title ?? '';
-    const json = parseJsonContent(page.content?.json ?? undefined);
-    const canvas = parseCanvasData(page.content?.canvasJson);
+    const content = page.content?.[0]; // Take the first content item
+    
+    // Debug logging
+    console.log('[EditorPanel] Loading page:', page.id);
+    console.log('[EditorPanel] Content array:', page.content);
+    console.log('[EditorPanel] First content item:', content);
+    
+    const html = content?.html ?? '<p></p>';
+    const text = content?.text ?? page.title ?? '';
+    const json = parseJsonContent(content?.json ?? undefined);
+    const canvas = parseCanvasData(content?.canvasJson);
+    
+    console.log('[EditorPanel] Parsed - html:', html?.substring(0, 100));
+    console.log('[EditorPanel] Parsed - text:', text?.substring(0, 100));
+    console.log('[EditorPanel] Parsed - json:', json);
 
     setPageState({
       title: page.title,
@@ -378,13 +399,21 @@ export function EditorPanel(): JSX.Element {
         : 'canvas');
     surfacePreferencesRef.current[page.id] = preferredSurface;
     setActiveSurface(preferredSurface);
+    
+    console.log('[EditorPanel] Setting surface to:', preferredSurface);
+    console.log('[EditorPanel] Editor instance:', editor);
 
     if (editor) {
       if (json) {
+        console.log('[EditorPanel] Setting JSON content');
         editor.commands.setContent(json, false);
       } else {
+        console.log('[EditorPanel] Setting HTML content');
         editor.commands.setContent(html, false);
       }
+      console.log('[EditorPanel] Content set successfully');
+    } else {
+      console.warn('[EditorPanel] Editor not initialized yet!');
     }
   }, [pageQuery.data, editor, clearPendingSave]);
 
