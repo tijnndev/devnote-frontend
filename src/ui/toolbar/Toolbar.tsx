@@ -10,7 +10,8 @@ const SHORTCUTS = [
   { label: 'Heading', keys: 'Ctrl+Alt+2' },
   { label: 'Bullet List', keys: 'Ctrl+Shift+8' },
   { label: 'Ordered List', keys: 'Ctrl+Shift+7' },
-  { label: 'Blockquote', keys: 'Ctrl+Shift+9' },
+  { label: 'Task List', keys: 'Ctrl+Shift+9' },
+  { label: 'Blockquote', keys: 'Ctrl+Shift+0' },
   { label: 'Highlight', keys: 'Ctrl+Shift+H' },
   { label: 'Undo', keys: 'Ctrl+Z' },
   { label: 'Redo', keys: 'Ctrl+Y' },
@@ -35,7 +36,8 @@ import {
   Undo2,
   ListTree,
   Highlighter,
-  FileDown
+  FileDown,
+  ListTodo,
 } from 'lucide-react';
 
 const toolbarButton =
@@ -142,7 +144,7 @@ export function Toolbar({ editor, onRecordRevision, pageTitle }: ToolbarProps) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(12);
       const lines = doc.splitTextToSize(textContent, maxLineWidth);
-      doc.text(lines, margin, margin + 28);
+      doc.text(lines as string[], margin, margin + 28);
 
       doc.save(filename);
     } catch (error) {
@@ -200,11 +202,21 @@ export function Toolbar({ editor, onRecordRevision, pageTitle }: ToolbarProps) {
       shortcut: 'Ctrl+Shift+7',
     },
     {
+      label: 'Task List',
+      icon: <ListTodo className="h-4 w-4" />,
+      action: () => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+        editor.chain().focus().toggleTaskList().run();
+      },
+      active: editor.isActive('taskList'),
+      shortcut: 'Ctrl+Shift+9',
+    },
+    {
       label: 'Blockquote',
       icon: <Quote className="h-4 w-4" />,
       action: () => editor.chain().focus().toggleBlockquote().run(),
       active: editor.isActive('blockquote'),
-      shortcut: 'Ctrl+Shift+9',
+      shortcut: 'Ctrl+Shift+0',
     },
     {
       label: 'Highlight',

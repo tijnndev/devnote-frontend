@@ -21,6 +21,8 @@ import Highlight from '@tiptap/extension-highlight';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import StarterKit from '@tiptap/starter-kit';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
 import { Loader2 } from 'lucide-react';
 
 import { fetchPage, updatePage } from '../../api/notes';
@@ -32,6 +34,18 @@ import { Toolbar } from '../toolbar/Toolbar';
 function truncateText(text: string, maxLength: number = 20): string {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength - 3) + '...';
+}
+
+// Simple hash function for quick comparison
+function simpleHash(obj: unknown): string {
+  const str = JSON.stringify(obj);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return hash.toString(36);
 }
 
 function parseJsonContent(content?: string | null): JSONContent | undefined {
@@ -204,6 +218,7 @@ export function EditorPanel(): JSX.Element {
     text: defaultPageState.contentText,
     json: defaultPageState.contentJson
   });
+  const lastJsonHashRef = useRef<string>('');
   const latestCanvasRef = useRef<CanvasData | null>(defaultPageState.canvasData);
   const initialCanvasDataRef = useRef<ExcalidrawInitialDataState | undefined>(undefined);
   const lastCanvasSnapshotRef = useRef<string>('');
@@ -230,7 +245,8 @@ export function EditorPanel(): JSX.Element {
       },
       onSuccess: (page) => {
         queryClient.setQueryData(queryKeys.page(page.id), page);
-        void queryClient.invalidateQueries({ queryKey: queryKeys.workspace });
+        // Only invalidate workspace if title or folder changed (which affects navigation)
+        // Don't invalidate on content-only updates for better performance
         setSaving(false);
         setLastSavedAt(new Date());
         hasPendingChangesRef.current = false;
@@ -254,6 +270,9 @@ export function EditorPanel(): JSX.Element {
       const targetPageId = activePageIdRef.current;
       if (!targetPageId) return;
       if (!options?.force && !hasPendingChangesRef.current) return;
+      
+      // Skip if another save is in progress (will be saved on next schedule)
+      if (updatePageMutation.isPending) return;
 
       clearPendingSave();
       updatePageMutation.mutate({
@@ -277,18 +296,33 @@ export function EditorPanel(): JSX.Element {
     if (!activePageIdRef.current) return;
 
     clearPendingSave();
+    // Increased debounce from 600ms to 1500ms to reduce save frequency
     debounceTimer.current = setTimeout(() => {
       persistPage();
-    }, 600);
+    }, 1500);
   }, [clearPendingSave, persistPage]);
 
   const editor = useEditor(
     {
       extensions: [
-        StarterKit,
+        StarterKit.configure({
+          bulletList: {
+            keepMarks: true,
+            keepAttributes: false,
+          },
+          orderedList: {
+            keepMarks: true,
+            keepAttributes: false,
+          },
+        }),
         Highlight,
         Link.configure({ openOnClick: false }),
-        Image.configure({ inline: false })
+        Image.configure({ inline: false }),
+        TaskList,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+        TaskItem.configure({
+          nested: true,
+        }),
       ],
       content: '',
       editable: enabled,
@@ -298,14 +332,17 @@ export function EditorPanel(): JSX.Element {
         const text = instance.state.doc.textContent;
         const json = instance.getJSON();
 
-        // Only trigger autosave if content actually changed
+        // Use hash for faster comparison instead of deep JSON stringify
+        const jsonHash = simpleHash(json);
         const prev = latestContentRef.current;
         const isSame =
           prev.html === html &&
           prev.text === text &&
-          JSON.stringify(prev.json) === JSON.stringify(json);
+          lastJsonHashRef.current === jsonHash;
+        
         if (isSame) return;
 
+        lastJsonHashRef.current = jsonHash;
         latestContentRef.current = { html, text, json };
         setPageState((prev) => ({
           ...prev,
@@ -493,16 +530,32 @@ export function EditorPanel(): JSX.Element {
   const handleTitleChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (!activePageIdRef.current) return;
     const value = event.target.value;
+    const previousTitle = latestTitleRef.current;
     latestTitleRef.current = value;
     setPageState((prev) => ({ ...prev, title: value }));
     hasPendingChangesRef.current = true;
     setHasPendingChanges(true);
+    
+    // Store if title changed for workspace invalidation later
+    if (previousTitle !== value) {
+      (window as { __titleChanged?: boolean }).__titleChanged = true;
+    }
+    
     scheduleSave();
   };
 
   const handleTitleBlur = () => {
     if (!autoSaveEnabledRef.current) return;
-    persistPage();
+    
+    // If title changed, invalidate workspace after save
+    if ((window as { __titleChanged?: boolean }).__titleChanged) {
+      persistPage();
+      // Invalidate workspace to update navigation
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workspace });
+      (window as { __titleChanged?: boolean }).__titleChanged = false;
+    } else {
+      persistPage();
+    }
   };
 
   const handleToggleAutoSave = () => {

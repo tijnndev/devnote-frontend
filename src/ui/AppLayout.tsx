@@ -29,7 +29,7 @@ export function AppLayout() {
     navigate('/login', { replace: true });
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = () => {
     isResizingRef.current = true;
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);

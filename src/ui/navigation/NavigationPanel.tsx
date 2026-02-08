@@ -15,8 +15,27 @@ import {
   Folder,
   FolderPlus,
   Trash2,
+  GripVertical,
 } from "lucide-react";
 import clsx from "clsx";
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  useSortable,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 import {
   createFolder,
@@ -26,6 +45,8 @@ import {
   fetchPage,
   fetchWorkspaceTree,
   searchPages,
+  updateFolder,
+  updatePage,
 } from "../../api/notes";
 import type {
   FolderNode,
@@ -45,10 +66,17 @@ function sortPages(pages: Page[]) {
 
 function sortFolders(folders: FolderNode[]) {
   return [...folders].sort((a, b) => {
-    if (a.position !== b.position) return a.position - b.position;
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    // Sort alphabetically by title
+    return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
   });
 }
+
+type DragItem = {
+  id: string;
+  type: 'folder' | 'page';
+  parentId: string | null;
+  title?: string;
+};
 
 function truncateText(text: string, maxLength: number = 20): string {
   if (text.length <= maxLength) return text;
@@ -103,7 +131,86 @@ type FolderTreeProps = {
   prefetchPage: (pageId: string) => void;
   sidebarWidth: number;
   depth?: number;
+  isDragging?: boolean;
 };
+
+type DraggablePageProps = {
+  page: Page;
+  folderId: string;
+  isSelected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onPrefetch: () => void;
+};
+
+function DraggablePage({
+  page,
+  folderId,
+  isSelected,
+  onSelect,
+  onDelete,
+  onPrefetch,
+}: DraggablePageProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: `page-${page.id}`,
+    data: {
+      type: 'page',
+      id: page.id,
+      parentId: folderId,
+      title: page.title,
+    },
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <li ref={setNodeRef} style={style}>
+      <div
+        className={`flex items-center justify-between rounded px-2 py-1 hover:bg-slate-800 ${
+          isSelected ? "bg-slate-800 text-white" : ""
+        }`}
+      >
+        <div className="flex flex-1 items-center gap-1">
+          <button
+            type="button"
+            className="cursor-grab active:cursor-grabbing p-1"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-3 w-3 text-slate-500" />
+          </button>
+          <button
+            type="button"
+            className="flex-1 truncate text-left"
+            onClick={onSelect}
+            onMouseEnter={onPrefetch}
+            onFocus={onPrefetch}
+          >
+            {page.title}
+          </button>
+        </div>
+        <button
+          type="button"
+          className="ml-2 shrink-0 rounded px-1 py-0.5 text-red-300 hover:bg-red-500/20"
+          onClick={onDelete}
+        >
+          Delete
+        </button>
+      </div>
+    </li>
+  );
+}
 
 function FolderTreeItem({
   folder,
@@ -123,28 +230,58 @@ function FolderTreeItem({
 }: FolderTreeProps) {
   const isExpanded = expanded.has(folder.id);
   const isSelected = selectedFolderId === folder.id;
-
-  // This folder's title is at the current depth level (already inside parent's wrapper)
-  // So we calculate based on the current depth for this folder's own title
   const maxChars = calculateMaxCharsForWidth(sidebarWidth, true, depth);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging: isFolderDragging,
+    isOver,
+  } = useSortable({
+    id: `folder-${folder.id}`,
+    data: {
+      type: 'folder',
+      id: folder.id,
+      parentId: folder.parentId,
+      title: folder.title,
+    },
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isFolderDragging ? 0.5 : 1,
+  };
 
   const handleToggle = () => {
     const wasExpanded = expanded.has(folder.id);
     toggle(folder.id);
     
-    // Only select the folder when expanding, not when collapsing
     if (!wasExpanded) {
       onSelectFolder(folder.id);
     }
   };
 
   return (
-    <li key={folder.id} className="rounded">
+    <li ref={setNodeRef} style={style} key={folder.id} className="rounded">
       <div
-        className={`flex items-center justify-between rounded px-2 py-1 text-slate-200 hover:bg-slate-800 ${
-          isSelected ? "bg-slate-800 text-white" : ""
-        }`}
+        className={clsx(
+          "flex items-center justify-between rounded px-2 py-1 text-slate-200 hover:bg-slate-800",
+          isSelected && "bg-slate-800 text-white",
+          isOver && "ring-2 ring-blue-500"
+        )}
       >
+        <button
+          type="button"
+          className="cursor-grab active:cursor-grabbing p-1"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-3 w-3 text-slate-500" />
+        </button>
         <button
           type="button"
           onClick={handleToggle}
@@ -185,60 +322,52 @@ function FolderTreeItem({
       {isExpanded ? (
         <div className="ml-3 border-l border-slate-800 pl-2">
           {folder.pages.length > 0 ? (
-            <ul className="mt-1 space-y-1 text-sm text-slate-300">
-              {sortPages(folder.pages).map((page) => {
-                const isPageSelected = selectedPageId === page.id;
-                return (
-                  <li key={page.id}>
-                    <div
-                      className={`flex items-center justify-between rounded px-2 py-1 hover:bg-slate-800 ${
-                        isPageSelected ? "bg-slate-800 text-white" : ""
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        className="flex-1 truncate text-left"
-                        onClick={() => onSelectPage(folder.id, page)}
-                        onMouseEnter={() => prefetchPage(page.id)}
-                        onFocus={() => prefetchPage(page.id)}
-                      >
-                        {page.title}
-                      </button>
-                      <button
-                        type="button"
-                        className="ml-2 shrink-0 rounded px-1 py-0.5 text-red-300 hover:bg-red-500/20"
-                        onClick={() => onDeletePage(page.id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <SortableContext
+              items={folder.pages.map((p) => `page-${p.id}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul className="mt-1 space-y-1 text-sm text-slate-300">
+                {sortPages(folder.pages).map((page) => (
+                  <DraggablePage
+                    key={page.id}
+                    page={page}
+                    folderId={folder.id}
+                    isSelected={selectedPageId === page.id}
+                    onSelect={() => onSelectPage(folder.id, page)}
+                    onDelete={() => onDeletePage(page.id)}
+                    onPrefetch={() => prefetchPage(page.id)}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
           ) : null}
           {folder.children.length > 0 ? (
-            <ul className="mt-2 space-y-1">
-              {sortFolders(folder.children).map((child) => (
-                <FolderTreeItem
-                  key={child.id}
-                  folder={child}
-                  expanded={expanded}
-                  toggle={toggle}
-                  onCreateFolder={onCreateFolder}
-                  onCreatePage={onCreatePage}
-                  onDeleteFolder={onDeleteFolder}
-                  onDeletePage={onDeletePage}
-                  onSelectFolder={onSelectFolder}
-                  onSelectPage={onSelectPage}
-                  selectedFolderId={selectedFolderId}
-                  selectedPageId={selectedPageId}
-                  prefetchPage={prefetchPage}
-                  sidebarWidth={sidebarWidth}
-                  depth={depth + 1}
-                />
-              ))}
-            </ul>
+            <SortableContext
+              items={folder.children.map((f) => `folder-${f.id}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul className="mt-2 space-y-1">
+                {sortFolders(folder.children).map((child) => (
+                  <FolderTreeItem
+                    key={child.id}
+                    folder={child}
+                    expanded={expanded}
+                    toggle={toggle}
+                    onCreateFolder={onCreateFolder}
+                    onCreatePage={onCreatePage}
+                    onDeleteFolder={onDeleteFolder}
+                    onDeletePage={onDeletePage}
+                    onSelectFolder={onSelectFolder}
+                    onSelectPage={onSelectPage}
+                    selectedFolderId={selectedFolderId}
+                    selectedPageId={selectedPageId}
+                    prefetchPage={prefetchPage}
+                    sidebarWidth={sidebarWidth}
+                    depth={depth + 1}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
           ) : null}
         </div>
       ) : null}
@@ -446,6 +575,89 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
       clear();
     },
   });
+
+  const moveFolderMutation = useMutation({
+    mutationFn: ({ folderId, parentId }: { folderId: string; parentId: string | null }) =>
+      updateFolder(folderId, { parentId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workspace });
+    },
+  });
+
+  const movePageMutation = useMutation({
+    mutationFn: ({ pageId, folderId }: { pageId: string; folderId: string | null }) =>
+      updatePage(pageId, { folderId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workspace });
+    },
+  });
+
+  const [activeDragItem, setActiveDragItem] = useState<DragItem | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragItem(event.active.data.current as DragItem);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveDragItem(null);
+    
+    const { active, over } = event;
+    
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const activeData = active.data.current as DragItem;
+    const overData = over.data.current as DragItem | undefined;
+
+    if (!activeData || !overData) return;
+
+    // Handle folder being dropped
+    if (activeData.type === 'folder') {
+      if (overData.type === 'folder') {
+        // Moving folder into another folder or reordering
+        const activeFolderId = activeData.id;
+        const targetFolderId = overData.id;
+        
+        // Prevent moving a folder into itself
+        if (activeFolderId === targetFolderId) return;
+        
+        void moveFolderMutation.mutate({
+          folderId: activeFolderId,
+          parentId: targetFolderId,
+        });
+      }
+    }
+    // Handle page being dropped
+    else if (activeData.type === 'page') {
+      if (overData.type === 'folder') {
+        // Moving page into a folder
+        void movePageMutation.mutate({
+          pageId: activeData.id,
+          folderId: overData.id,
+        });
+      } else if (overData.type === 'page') {
+        // Reordering pages at same level - move to same folder as target
+        if (activeData.parentId !== overData.parentId) {
+          void movePageMutation.mutate({
+            pageId: activeData.id,
+            folderId: overData.parentId,
+          });
+        }
+      }
+    }
+  };
 
   useEffect(() => {
     if (!isMobileView) {
@@ -881,63 +1093,80 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
       </div>
     );
   } else {
+    const allFolderIds = tree.folders.map((f) => `folder-${f.id}`);
+    const allPageIds = tree.pages.map((p) => `page-${p.id}`);
+    
     content = (
-      <div className="px-2 py-2 text-sm">
-        {tree.pages.length > 0 ? (
-          <ul className="mb-2 space-y-1">
-            {sortPages(tree.pages).map((page) => {
-              const isSelected =
-                pageId === page.id && (folderId ?? null) === null;
-              return (
-                <li key={page.id}>
-                  <div
-                    className={`flex items-center justify-between rounded px-2 py-1 hover:bg-slate-800 ${
-                      isSelected ? "bg-slate-800 text-white" : "text-slate-200"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      className="flex-1 truncate text-left"
-                      onClick={() => handleSelectPage(null, page)}
-                      onMouseEnter={() => prefetchPage(page.id)}
-                      onFocus={() => prefetchPage(page.id)}
-                    >
-                      {page.title}
-                    </button>
-                    <button
-                      type="button"
-                      className="ml-2 shrink-0 rounded px-1 py-0.5 text-red-300 hover:bg-red-500/20"
-                      onClick={() => handleDeletePage(page.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
-        <ul className="space-y-1 text-sm">
-          {sortFolders(tree.folders).map((folder) => (
-            <FolderTreeItem
-              key={folder.id}
-              folder={folder}
-              expanded={expanded}
-              toggle={toggleFolder}
-              onCreateFolder={handleCreateFolder}
-              onCreatePage={handleCreatePage}
-              onDeleteFolder={handleDeleteFolder}
-              onDeletePage={handleDeletePage}
-              onSelectFolder={(id) => handleSelectFolder(id)}
-              onSelectPage={handleSelectPage}
-              selectedFolderId={folderId}
-              selectedPageId={pageId}
-              prefetchPage={prefetchPage}
-              sidebarWidth={width}
-            />
-          ))}
-        </ul>
-      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="px-2 py-2 text-sm">
+          {tree.pages.length > 0 ? (
+            <SortableContext
+              items={allPageIds}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul className="mb-2 space-y-1">
+                {sortPages(tree.pages).map((page) => {
+                  const isSelected =
+                    pageId === page.id && (folderId ?? null) === null;
+                  return (
+                    <DraggablePage
+                      key={page.id}
+                      page={page}
+                      folderId={page.folderId ?? ''}
+                      isSelected={isSelected}
+                      onSelect={() => handleSelectPage(null, page)}
+                      onDelete={() => handleDeletePage(page.id)}
+                      onPrefetch={() => prefetchPage(page.id)}
+                    />
+                  );
+                })}
+              </ul>
+            </SortableContext>
+          ) : null}
+          <SortableContext
+            items={allFolderIds}
+            strategy={verticalListSortingStrategy}
+          >
+            <ul className="space-y-1 text-sm">
+              {sortFolders(tree.folders).map((folder) => (
+                <FolderTreeItem
+                  key={folder.id}
+                  folder={folder}
+                  expanded={expanded}
+                  toggle={toggleFolder}
+                  onCreateFolder={handleCreateFolder}
+                  onCreatePage={handleCreatePage}
+                  onDeleteFolder={handleDeleteFolder}
+                  onDeletePage={handleDeletePage}
+                  onSelectFolder={(id) => handleSelectFolder(id)}
+                  onSelectPage={handleSelectPage}
+                  selectedFolderId={folderId}
+                  selectedPageId={pageId}
+                  prefetchPage={prefetchPage}
+                  sidebarWidth={width}
+                />
+              ))}
+            </ul>
+          </SortableContext>
+        </div>
+        <DragOverlay>
+          {activeDragItem ? (
+            <div className="flex items-center gap-2 rounded bg-slate-800 px-3 py-2 text-slate-200 shadow-lg ring-2 ring-blue-500">
+              {activeDragItem.type === 'folder' ? (
+                <Folder className="h-4 w-4 text-slate-400" />
+              ) : (
+                <FileText className="h-4 w-4 text-slate-400" />
+              )}
+              <span className="font-medium">{activeDragItem.title || 'Untitled'}</span>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     );
   }
 
