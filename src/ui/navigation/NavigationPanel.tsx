@@ -96,7 +96,7 @@ function calculateMaxCharsForWidth(width: number, hasButtons: boolean = true, pa
 
   // Button space: "+ Folder" + "+ Page" + Delete icon + gaps
   // More reasonable estimate: ~150px total
-  const buttonsWidth = hasButtons ? 168 : 0;
+  const buttonsWidth = hasButtons ? 108 : 0;
 
   // Available width for tex
   // The indentation (ml-3 + pl-2) is applied to the container, reducing available space
