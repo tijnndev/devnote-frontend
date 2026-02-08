@@ -88,31 +88,31 @@ function calculateMaxCharsForWidth(width: number, hasButtons: boolean = true, pa
   const padding = 16; // px-2 = 8px * 2
   const iconWidth = 16; // h-4 w-4 icon
   const gap = 8; // gap-2
-  
+
   // Indentation per level: ml-3 (12px) + pl-2 (8px) = 20px
   // Each level of nesting adds margin-left and padding-left, which reduces available text space
   const indentationPerLevel = 20;
   const totalIndentation = parentDepth * indentationPerLevel;
-  
+
   // Button space: "+ Folder" + "+ Page" + Delete icon + gaps
   // More reasonable estimate: ~150px total
   const buttonsWidth = hasButtons ? 168 : 0;
-  
+
   // Available width for tex
   // The indentation (ml-3 + pl-2) is applied to the container, reducing available space
   const availableWidth = width - padding - iconWidth - gap - buttonsWidth - totalIndentation;
-  
+
   // If width is too small, be very aggressive with truncation
   if (availableWidth <= 16) {
     return 1; // Show minimal characters
   }
-  
+
   // Estimate character width (average 8px per character for most fonts)
   const charWidth = 8;
-  
+
   // Calculate max characters with more conservative approach
   const maxChars = Math.floor(availableWidth / charWidth);
-  
+
   return Math.max(1, maxChars);
 }
 
@@ -198,12 +198,11 @@ function DraggablePage({
   return (
     <li ref={setNodeRef} style={style}>
       <div
-        className={`flex items-center justify-between rounded px-2 py-1 hover:bg-slate-800 ${
-          isSelected ? "bg-slate-800 text-white" : ""
-        }`}
+        className={`flex items-center justify-between rounded px-2 py-1 hover:bg-slate-800 ${isSelected ? "bg-slate-800 text-white" : ""
+          }`}
         {...attributes}
       >
-        <span 
+        <span
           className="flex-1 truncate text-left cursor-grab active:cursor-grabbing"
           {...listeners}
           onClick={onSelect}
@@ -274,7 +273,7 @@ function FolderTreeItem({
   const handleToggle = () => {
     const wasExpanded = expanded.has(folder.id);
     toggle(folder.id);
-    
+
     if (!wasExpanded) {
       onSelectFolder(folder.id);
     }
@@ -309,13 +308,14 @@ function FolderTreeItem({
         <div className="flex items-center gap-1 text-xs">
           <button
             type="button"
-            className="rounded px-1 py-0.5 hover:bg-slate-700"
+            className="rounded px-1 py-0.5 hover:bg-slate-700 flex items-center gap-1"
             onClick={(e) => {
               e.stopPropagation();
               onCreateFolder(folder.id);
             }}
+            aria-label="Add folder"
           >
-            + Folder
+            <FolderPlus className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
@@ -325,7 +325,7 @@ function FolderTreeItem({
               onCreatePage(folder.id);
             }}
           >
-            + Page
+            <FilePlus2 className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
@@ -632,9 +632,9 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveDragItem(null);
-    
+
     const { active, over } = event;
-    
+
     if (!over || active.id === over.id) {
       return;
     }
@@ -668,10 +668,10 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
         // Moving folder into another folder or reordering
         const activeFolderId = activeData.id;
         const targetFolderId = overData.id;
-        
+
         // Prevent moving a folder into itself
         if (activeFolderId === targetFolderId) return;
-        
+
         void moveFolderMutation.mutate({
           folderId: activeFolderId,
           parentId: targetFolderId,
@@ -770,7 +770,7 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
     setExpanded((prev) => {
       const next = new Set(prev);
       for (const id of path) {
-        if(next.has(id)) continue
+        if (next.has(id)) continue
         next.add(id);
       }
       return next;
@@ -1039,14 +1039,14 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
               onClick={() => handleCreatePage(currentFolder.id)}
               className="rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
             >
-              + Page
+              <FilePlus2 className="h-3.5 w-3.5 inline-block" />
             </button>
             <button
               type="button"
               onClick={() => handleCreateFolder(currentFolder.id)}
               className="rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
             >
-              + Folder
+              <FolderPlus className="h-3.5 w-3.5 inline-block" />
             </button>
           </div>
         ) : null}
@@ -1134,7 +1134,7 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
   } else {
     const allFolderIds = tree.folders.map((f) => `folder-${f.id}`);
     const allPageIds = tree.pages.map((p) => `page-${p.id}`);
-    
+
     content = (
       <DndContext
         sensors={sensors}
