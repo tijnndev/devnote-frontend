@@ -15,7 +15,6 @@ import {
   Folder,
   FolderPlus,
   Trash2,
-  GripVertical,
 } from "lucide-react";
 import clsx from "clsx";
 import {
@@ -26,6 +25,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
@@ -143,6 +143,27 @@ type DraggablePageProps = {
   onPrefetch: () => void;
 };
 
+function RootDropZone({ children }: { children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: 'root-drop-zone',
+    data: {
+      type: 'root',
+    },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={clsx(
+        "min-h-[200px] h-full flex-1",
+        isOver && "bg-blue-500/10 ring-2 ring-blue-500 ring-inset"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 function DraggablePage({
   page,
   folderId,
@@ -180,30 +201,24 @@ function DraggablePage({
         className={`flex items-center justify-between rounded px-2 py-1 hover:bg-slate-800 ${
           isSelected ? "bg-slate-800 text-white" : ""
         }`}
+        {...attributes}
       >
-        <div className="flex flex-1 items-center gap-1">
-          <button
-            type="button"
-            className="cursor-grab active:cursor-grabbing p-1"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-3 w-3 text-slate-500" />
-          </button>
-          <button
-            type="button"
-            className="flex-1 truncate text-left"
-            onClick={onSelect}
-            onMouseEnter={onPrefetch}
-            onFocus={onPrefetch}
-          >
-            {page.title}
-          </button>
-        </div>
+        <span 
+          className="flex-1 truncate text-left cursor-grab active:cursor-grabbing"
+          {...listeners}
+          onClick={onSelect}
+          onMouseEnter={onPrefetch}
+          onFocus={onPrefetch}
+        >
+          {page.title}
+        </span>
         <button
           type="button"
           className="ml-2 shrink-0 rounded px-1 py-0.5 text-red-300 hover:bg-red-500/20"
-          onClick={onDelete}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
         >
           Delete
         </button>
@@ -273,19 +288,16 @@ function FolderTreeItem({
           isSelected && "bg-slate-800 text-white",
           isOver && "ring-2 ring-blue-500"
         )}
+        {...attributes}
       >
         <button
           type="button"
-          className="cursor-grab active:cursor-grabbing p-1"
-          {...attributes}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggle();
+          }}
+          className="flex flex-1 items-center gap-2 text-left cursor-grab active:cursor-grabbing"
           {...listeners}
-        >
-          <GripVertical className="h-3 w-3 text-slate-500" />
-        </button>
-        <button
-          type="button"
-          onClick={handleToggle}
-          className="flex flex-1 items-center gap-2 text-left"
         >
           {isExpanded ? (
             <ChevronDown className="h-4 w-4" />
@@ -298,21 +310,30 @@ function FolderTreeItem({
           <button
             type="button"
             className="rounded px-1 py-0.5 hover:bg-slate-700"
-            onClick={() => onCreateFolder(folder.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCreateFolder(folder.id);
+            }}
           >
             + Folder
           </button>
           <button
             type="button"
             className="rounded px-1 py-0.5 hover:bg-slate-700"
-            onClick={() => onCreatePage(folder.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCreatePage(folder.id);
+            }}
           >
             + Page
           </button>
           <button
             type="button"
             className="rounded px-1 py-0.5 text-red-300 hover:bg-red-500/20"
-            onClick={() => onDeleteFolder(folder.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteFolder(folder.id);
+            }}
             aria-label="Delete folder"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -619,9 +640,27 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
     }
 
     const activeData = active.data.current as DragItem;
-    const overData = over.data.current as DragItem | undefined;
+    const overData = over.data.current as DragItem | { type: 'root' } | undefined;
 
-    if (!activeData || !overData) return;
+    if (!activeData) return;
+
+    // Handle dropping to root (when overData is undefined or explicitly root drop zone)
+    if (!overData || (overData && 'type' in overData && overData.type === 'root')) {
+      if (activeData.type === 'folder') {
+        // Move folder to root
+        void moveFolderMutation.mutate({
+          folderId: activeData.id,
+          parentId: null,
+        });
+      } else if (activeData.type === 'page') {
+        // Move page to root
+        void movePageMutation.mutate({
+          pageId: activeData.id,
+          folderId: null,
+        });
+      }
+      return;
+    }
 
     // Handle folder being dropped
     if (activeData.type === 'folder') {
@@ -1103,57 +1142,59 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="px-2 py-2 text-sm">
-          {tree.pages.length > 0 ? (
+        <RootDropZone>
+          <div className="px-2 py-2 text-sm">
+            {tree.pages.length > 0 ? (
+              <SortableContext
+                items={allPageIds}
+                strategy={verticalListSortingStrategy}
+              >
+                <ul className="mb-2 space-y-1">
+                  {sortPages(tree.pages).map((page) => {
+                    const isSelected =
+                      pageId === page.id && (folderId ?? null) === null;
+                    return (
+                      <DraggablePage
+                        key={page.id}
+                        page={page}
+                        folderId={page.folderId ?? ''}
+                        isSelected={isSelected}
+                        onSelect={() => handleSelectPage(null, page)}
+                        onDelete={() => handleDeletePage(page.id)}
+                        onPrefetch={() => prefetchPage(page.id)}
+                      />
+                    );
+                  })}
+                </ul>
+              </SortableContext>
+            ) : null}
             <SortableContext
-              items={allPageIds}
+              items={allFolderIds}
               strategy={verticalListSortingStrategy}
             >
-              <ul className="mb-2 space-y-1">
-                {sortPages(tree.pages).map((page) => {
-                  const isSelected =
-                    pageId === page.id && (folderId ?? null) === null;
-                  return (
-                    <DraggablePage
-                      key={page.id}
-                      page={page}
-                      folderId={page.folderId ?? ''}
-                      isSelected={isSelected}
-                      onSelect={() => handleSelectPage(null, page)}
-                      onDelete={() => handleDeletePage(page.id)}
-                      onPrefetch={() => prefetchPage(page.id)}
-                    />
-                  );
-                })}
+              <ul className="space-y-1 text-sm">
+                {sortFolders(tree.folders).map((folder) => (
+                  <FolderTreeItem
+                    key={folder.id}
+                    folder={folder}
+                    expanded={expanded}
+                    toggle={toggleFolder}
+                    onCreateFolder={handleCreateFolder}
+                    onCreatePage={handleCreatePage}
+                    onDeleteFolder={handleDeleteFolder}
+                    onDeletePage={handleDeletePage}
+                    onSelectFolder={(id) => handleSelectFolder(id)}
+                    onSelectPage={handleSelectPage}
+                    selectedFolderId={folderId}
+                    selectedPageId={pageId}
+                    prefetchPage={prefetchPage}
+                    sidebarWidth={width}
+                  />
+                ))}
               </ul>
             </SortableContext>
-          ) : null}
-          <SortableContext
-            items={allFolderIds}
-            strategy={verticalListSortingStrategy}
-          >
-            <ul className="space-y-1 text-sm">
-              {sortFolders(tree.folders).map((folder) => (
-                <FolderTreeItem
-                  key={folder.id}
-                  folder={folder}
-                  expanded={expanded}
-                  toggle={toggleFolder}
-                  onCreateFolder={handleCreateFolder}
-                  onCreatePage={handleCreatePage}
-                  onDeleteFolder={handleDeleteFolder}
-                  onDeletePage={handleDeletePage}
-                  onSelectFolder={(id) => handleSelectFolder(id)}
-                  onSelectPage={handleSelectPage}
-                  selectedFolderId={folderId}
-                  selectedPageId={pageId}
-                  prefetchPage={prefetchPage}
-                  sidebarWidth={width}
-                />
-              ))}
-            </ul>
-          </SortableContext>
-        </div>
+          </div>
+        </RootDropZone>
         <DragOverlay>
           {activeDragItem ? (
             <div className="flex items-center gap-2 rounded bg-slate-800 px-3 py-2 text-slate-200 shadow-lg ring-2 ring-blue-500">
