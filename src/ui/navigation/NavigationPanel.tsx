@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronRight,
+  CheckSquare,
   FilePlus2,
   FileText,
   Folder,
@@ -56,6 +57,7 @@ import type {
 } from "../../api/types";
 import { queryKeys } from "../../lib/queryKeys";
 import { useSelectionStore } from "../../store/selection";
+import { TodoPanel } from './TodoPanel';
 
 function sortPages(pages: Page[]) {
   return [...pages].sort((a, b) => {
@@ -198,7 +200,7 @@ function DraggablePage({
   return (
     <li ref={setNodeRef} style={style}>
       <div
-        className={`flex items-center justify-between rounded px-2 py-1 hover:bg-slate-800 ${isSelected ? "bg-slate-800 text-white" : ""
+        className={`flex items-center justify-between rounded px-2 py-1 select-none hover:bg-slate-800 ${isSelected ? "bg-slate-800 text-white" : ""
           }`}
         {...attributes}
       >
@@ -283,7 +285,7 @@ function FolderTreeItem({
     <li ref={setNodeRef} style={style} key={folder.id} className="rounded">
       <div
         className={clsx(
-          "flex items-center justify-between rounded px-2 py-1 text-slate-200 hover:bg-slate-800",
+          "flex items-center justify-between rounded px-2 py-1 select-none text-slate-200 hover:bg-slate-800",
           isSelected && "bg-slate-800 text-white",
           isOver && "ring-2 ring-blue-500"
         )}
@@ -401,6 +403,7 @@ type PanelHeaderProps = {
   onCreateRootPage: () => void;
   searchTerm: string;
   onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onOpenTodos: () => void;
 };
 
 function PanelHeader({
@@ -408,6 +411,7 @@ function PanelHeader({
   onCreateRootPage,
   searchTerm,
   onSearchChange,
+  onOpenTodos,
 }: PanelHeaderProps) {
   return (
     <div className="space-y-2 border-b border-slate-800 px-3 py-3">
@@ -416,24 +420,33 @@ function PanelHeader({
           Workspace
         </h2>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onCreateRootPage}
-            className="flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700"
-            aria-label="Create new page"
-          >
-            <FilePlus2 className="h-3.5 w-3.5" />
-            Page
-          </button>
-          <button
-            type="button"
-            onClick={onCreateRootFolder}
-            className="flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700"
-            aria-label="Create new folder"
-          >
-            <FolderPlus className="h-3.5 w-3.5" />
-            Folder
-          </button>
+            <button
+              type="button"
+              onClick={onOpenTodos}
+              className="flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700"
+              aria-label="View todos"
+              title="Todo overview"
+            >
+              <CheckSquare className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onCreateRootPage}
+              className="flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700"
+              aria-label="Create new page"
+            >
+              <FilePlus2 className="h-3.5 w-3.5" />
+              Page
+            </button>
+            <button
+              type="button"
+              onClick={onCreateRootFolder}
+              className="flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700"
+              aria-label="Create new folder"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+              Folder
+            </button>
         </div>
       </div>
       <input
@@ -503,6 +516,7 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
   const [searchTerm, setSearchTerm] = useState("");
   const [drilldownPath, setDrilldownPath] = useState<string[]>([]);
   const [isMobileView, setIsMobileView] = useState(false);
+  const [todoPanelOpen, setTodoPanelOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -863,6 +877,12 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
   };
 
   const handleSelectPage = (folderIdValue: string | null, page: Page) => {
+    // Clicking the already-selected page deselects it
+    if (pageId === page.id) {
+      clear();
+      onClose?.();
+      return;
+    }
     selectPage(folderIdValue, page.id);
     ensureFolderExpanded(folderIdValue);
     onClose?.();
@@ -1224,9 +1244,21 @@ export function NavigationPanel({ className, onClose, width = 320 }: NavigationP
         onCreateRootPage={() => handleCreatePage(null)}
         searchTerm={searchTerm}
         onSearchChange={handleSearchChange}
+        onOpenTodos={() => setTodoPanelOpen(true)}
       />
       {searchContent}
       <div className="flex-1 overflow-y-auto">{content}</div>
+      {todoPanelOpen && (
+        <TodoPanel
+          onClose={() => setTodoPanelOpen(false)}
+          onSelectPage={(fId, pId) => {
+            setTodoPanelOpen(false);
+            ensureFolderExpanded(fId);
+            selectPage(fId, pId);
+            onClose?.();
+          }}
+        />
+      )}
     </aside>
   );
 }

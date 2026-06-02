@@ -61,6 +61,19 @@ export type SearchResult = {
   folderTitle: string | null;
 };
 
+export type TodoItem = {
+  checked: boolean;
+  text: string;
+};
+
+export type PageTodos = {
+  pageId: string;
+  pageTitle: string;
+  folderId: string | null;
+  folderTitle: string | null;
+  todos: TodoItem[];
+};
+
 export type ChangeLogEntry = {
   id: string;
   entityType: string;

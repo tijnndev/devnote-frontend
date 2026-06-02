@@ -96,7 +96,6 @@ When using DevNote Frontend:
 - Don't store sensitive data in localStorage
 - Clear sensitive data from memory when done
 - Implement proper error handling (don't leak info)
-- Be cautious with console.log in production
 
 ## Known Security Considerations
 

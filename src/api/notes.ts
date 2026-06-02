@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { FolderNode, Page, PageRevision, SearchResult, WorkspaceTree } from './types';
+import type { FolderNode, Page, PageRevision, PageTodos, SearchResult, WorkspaceTree } from './types';
 
 type FolderInput = {
   title: string;
@@ -92,4 +92,9 @@ export async function searchPages(query: string, limit = 20) {
     params: { query, limit }
   });
   return response.data.results;
+}
+
+export async function fetchTodos() {
+  const response = await api.get<{ todos: PageTodos[] }>('/api/todos');
+  return response.data.todos;
 }

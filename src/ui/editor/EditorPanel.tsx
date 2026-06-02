@@ -227,6 +227,12 @@ export function EditorPanel(): JSX.Element {
   const autoSaveEnabledRef = useRef(autoSaveEnabled);
   const hasPendingChangesRef = useRef(false);
   const skipAutoSaveEffectRef = useRef(true);
+  // Generation counter: incremented on every content change.
+  // Used to detect whether new changes arrived during an in-flight save.
+  const saveGenRef = useRef(0);
+  const currentSaveGenRef = useRef(0);
+  // Ref holding the previous pageId so we can save before switching.
+  const prevPageIdRef = useRef<string | null>(null);
   const [activeSurface, setActiveSurface] = useState<'document' | 'canvas'>('document');
   const enabled = Boolean(pageId);
   const pageQueryKey = pageId ? queryKeys.page(pageId) : EMPTY_PAGE_QUERY_KEY;
@@ -245,15 +251,24 @@ export function EditorPanel(): JSX.Element {
       },
       onSuccess: (page) => {
         queryClient.setQueryData(queryKeys.page(page.id), page);
-        // Only invalidate workspace if title or folder changed (which affects navigation)
-        // Don't invalidate on content-only updates for better performance
         setSaving(false);
         setLastSavedAt(new Date());
-        hasPendingChangesRef.current = false;
-        setHasPendingChanges(false);
+        // Only clear pending flags if no new changes arrived while saving
+        if (saveGenRef.current === currentSaveGenRef.current) {
+          hasPendingChangesRef.current = false;
+          setHasPendingChanges(false);
+        }
       },
       onError: () => {
         setSaving(false);
+        // Reschedule on error so the user's changes are not lost
+        if (hasPendingChangesRef.current && autoSaveEnabledRef.current) {
+          debounceTimer.current = setTimeout(() => {
+            if (hasPendingChangesRef.current && activePageIdRef.current && !updatePageMutation.isPending) {
+              persistPage();
+            }
+          }, 2000);
+        }
       }
     }
   );
@@ -271,8 +286,19 @@ export function EditorPanel(): JSX.Element {
       if (!targetPageId) return;
       if (!options?.force && !hasPendingChangesRef.current) return;
       
-      // Skip if another save is in progress (will be saved on next schedule)
-      if (updatePageMutation.isPending) return;
+      // If a save is already in flight, reschedule rather than drop the save
+      if (updatePageMutation.isPending) {
+        clearPendingSave();
+        debounceTimer.current = setTimeout(() => {
+          if (hasPendingChangesRef.current && activePageIdRef.current) {
+            persistPage(options);
+          }
+        }, 600);
+        return;
+      }
+
+      // Snapshot the generation so onSuccess can detect new changes
+      currentSaveGenRef.current = saveGenRef.current;
 
       clearPendingSave();
       updatePageMutation.mutate({
@@ -296,10 +322,9 @@ export function EditorPanel(): JSX.Element {
     if (!activePageIdRef.current) return;
 
     clearPendingSave();
-    // Increased debounce from 600ms to 1500ms to reduce save frequency
     debounceTimer.current = setTimeout(() => {
       persistPage();
-    }, 1500);
+    }, 800);
   }, [clearPendingSave, persistPage]);
 
   const editor = useEditor(
@@ -350,6 +375,7 @@ export function EditorPanel(): JSX.Element {
           contentText: text,
           contentJson: json
         }));
+        saveGenRef.current += 1;
         hasPendingChangesRef.current = true;
         setHasPendingChanges(true);
         scheduleSave();
@@ -388,19 +414,10 @@ export function EditorPanel(): JSX.Element {
     const page = pageQuery.data;
     const content = page.content?.[0]; // Take the first content item
     
-    // Debug logging
-    console.log('[EditorPanel] Loading page:', page.id);
-    console.log('[EditorPanel] Content array:', page.content);
-    console.log('[EditorPanel] First content item:', content);
-    
     const html = content?.html ?? '<p></p>';
     const text = content?.text ?? page.title ?? '';
     const json = parseJsonContent(content?.json ?? undefined);
     const canvas = parseCanvasData(content?.canvasJson);
-    
-    console.log('[EditorPanel] Parsed - html:', html?.substring(0, 100));
-    console.log('[EditorPanel] Parsed - text:', text?.substring(0, 100));
-    console.log('[EditorPanel] Parsed - json:', json);
 
     setPageState({
       title: page.title,
@@ -427,18 +444,12 @@ export function EditorPanel(): JSX.Element {
     surfacePreferencesRef.current[page.id] = preferredSurface;
     setActiveSurface(preferredSurface);
     
-    console.log('[EditorPanel] Setting surface to:', preferredSurface);
-    console.log('[EditorPanel] Editor instance:', editor);
-
     if (editor) {
       if (json) {
-        console.log('[EditorPanel] Setting JSON content');
         editor.commands.setContent(json, false);
       } else {
-        console.log('[EditorPanel] Setting HTML content');
         editor.commands.setContent(html, false);
       }
-      console.log('[EditorPanel] Content set successfully');
     } else {
       console.warn('[EditorPanel] Editor not initialized yet!');
     }
@@ -447,6 +458,50 @@ export function EditorPanel(): JSX.Element {
   useEffect(() => {
     latestTitleRef.current = pageState.title;
   }, [pageState.title]);
+
+  // Save the current page before switching to a different one
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const prevId = prevPageIdRef.current;
+    prevPageIdRef.current = pageId ?? null;
+
+    if (prevId && prevId !== (pageId ?? null) && hasPendingChangesRef.current) {
+      clearPendingSave();
+      currentSaveGenRef.current = saveGenRef.current;
+      updatePageMutation.mutate({
+        id: prevId,
+        input: {
+          title: latestTitleRef.current,
+          content: {
+            html: latestContentRef.current.html,
+            text: latestContentRef.current.text,
+            json: latestContentRef.current.json,
+            canvas: latestCanvasRef.current
+          }
+        }
+      });
+    }
+  }, [pageId]); // intentionally omitting stable refs — they don't need to trigger this
+
+  // Fix clipboard: TipTap/ProseMirror adds double newlines between list items.
+  // Override the plain-text clipboard data to use single newlines.
+  useEffect(() => {
+    if (!editor) return;
+    const editorEl = editor.view.dom;
+
+    const handleCopy = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const text = e.clipboardData.getData('text/plain');
+      if (!text) return;
+      const fixed = text.replace(/\n{2,}/g, '\n');
+      if (fixed !== text) {
+        e.clipboardData.setData('text/plain', fixed);
+      }
+    };
+
+    editorEl.addEventListener('copy', handleCopy);
+    return () => editorEl.removeEventListener('copy', handleCopy);
+  }, [editor]);
 
   useEffect(() => {
     if (!pageId) {
@@ -533,6 +588,7 @@ export function EditorPanel(): JSX.Element {
     const previousTitle = latestTitleRef.current;
     latestTitleRef.current = value;
     setPageState((prev) => ({ ...prev, title: value }));
+    saveGenRef.current += 1;
     hasPendingChangesRef.current = true;
     setHasPendingChanges(true);
     
@@ -618,6 +674,7 @@ export function EditorPanel(): JSX.Element {
     initialCanvasDataRef.current = cloneCanvasForInitialData(canvasData);
     latestCanvasRef.current = canvasData;
     setPageState((prev) => ({ ...prev, canvasData }));
+    saveGenRef.current += 1;
     hasPendingChangesRef.current = true;
     setHasPendingChanges(true);
     scheduleSave();
